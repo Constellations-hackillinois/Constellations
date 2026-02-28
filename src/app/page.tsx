@@ -90,15 +90,12 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [paperData, setPaperData] = useState<{ title: string; url: string } | null>(null);
   const [starFading, setStarFading] = useState(false);
-  const [debugMode, setDebugMode] = useState(true);
   const [constellationId, setConstellationId] = useState<string | undefined>();
   const [displayTopic, setDisplayTopic] = useState("");
   const landingGlowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
-    setDebugMode(new URLSearchParams(window.location.search).get("debug") !== "false");
-
     function handleGlow(e: MouseEvent) {
       if (landingGlowRef.current) {
         landingGlowRef.current.style.background =
@@ -130,9 +127,7 @@ export default function Home() {
       ? resolveUrlToPaper(query.trim()).then((paper) =>
           paper ? { results: [], pickedPaper: paper } : null
         ).catch(() => null)
-      : debugMode
-        ? new Promise<null>((r) => setTimeout(() => r(null), 800))
-        : searchTopicWithPaper(query).catch(() => null);
+      : searchTopicWithPaper(query).catch(() => null);
 
     const minDelay = new Promise<void>((r) => setTimeout(r, 1600));
 
@@ -152,7 +147,6 @@ export default function Home() {
         const params = new URLSearchParams();
         params.set("topic", resolvedTopic);
         params.set("id", id);
-        if (!debugMode) params.set("debug", "false");
         if (data?.pickedPaper) {
           params.set("paperTitle", data.pickedPaper.title);
           params.set("paperUrl", data.pickedPaper.url);
@@ -177,7 +171,6 @@ export default function Home() {
             topic={displayTopic || query}
             paperTitle={paperData?.title}
             paperUrl={paperData?.url}
-            debugMode={debugMode}
             constellationId={constellationId}
           />
         </div>

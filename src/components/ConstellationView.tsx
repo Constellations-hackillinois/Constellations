@@ -96,56 +96,6 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-// ─── Debug mode: fake data for testing UI without Exa credits ───
-const FAKE_TITLES = [
-  "Attention Is All You Need",
-  "BERT: Pre-training of Deep Bidirectional Transformers",
-  "Generative Adversarial Networks",
-  "Deep Residual Learning for Image Recognition",
-  "ImageNet Classification with Deep Convolutional Neural Networks",
-  "Playing Atari with Deep Reinforcement Learning",
-  "A Neural Algorithm of Artistic Style",
-  "Batch Normalization: Accelerating Deep Network Training",
-  "Dropout: A Simple Way to Prevent Neural Networks from Overfitting",
-  "Sequence to Sequence Learning with Neural Networks",
-  "Neural Machine Translation by Jointly Learning to Align and Translate",
-  "Variational Autoencoders for Collaborative Filtering",
-  "Proximal Policy Optimization Algorithms",
-  "Language Models are Few-Shot Learners",
-  "Scaling Laws for Neural Language Models",
-  "Chain-of-Thought Prompting Elicits Reasoning",
-  "Denoising Diffusion Probabilistic Models",
-  "High-Resolution Image Synthesis with Latent Diffusion Models",
-  "LoRA: Low-Rank Adaptation of Large Language Models",
-  "Constitutional AI: Harmlessness from AI Feedback",
-];
-
-const FAKE_RESPONSES = [
-  "This paper extends the core ideas by introducing a novel training objective.",
-  "A foundational work that influenced many subsequent architectures.",
-  "This explores an alternative approach to the same underlying problem.",
-  "Interesting connection — this paper cites the parent work extensively.",
-  "A key advancement that improved scalability significantly.",
-  "This work provides the theoretical foundation for the approach.",
-  "A highly cited paper that proposed a simpler but effective method.",
-];
-
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function fakePapers(count: number): { title: string; url: string }[] {
-  const shuffled = [...FAKE_TITLES].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count).map((title) => ({
-    title,
-    url: `https://arxiv.org/abs/${2000 + Math.floor(Math.random() * 500)}.${String(Math.floor(Math.random() * 99999)).padStart(5, "0")}`,
-  }));
-}
-
-async function fakeDelay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function createClientId() {
   return crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
 }
@@ -163,7 +113,6 @@ interface ConstellationViewProps {
   topic: string;
   paperTitle?: string;
   paperUrl?: string;
-  debugMode?: boolean;
   constellationId?: string;
 }
 
@@ -171,7 +120,6 @@ export default function ConstellationView({
   topic,
   paperTitle,
   paperUrl,
-  debugMode = false,
   constellationId: constellationIdProp,
 }: ConstellationViewProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -581,18 +529,11 @@ export default function ConstellationView({
       let pickedPaper: { title: string; url: string } | null;
       let aiResponse: string;
 
-      if (debugMode) {
-        await fakeDelay(600 + Math.random() * 400);
-        const papers = fakePapers(1);
-        pickedPaper = papers[0];
-        aiResponse = pickRandom(FAKE_RESPONSES);
-      } else {
-        const parentUrl = node.paperUrl ?? "";
-        const parentTitle = node.paperTitle ?? node.label;
-        const result = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
-        pickedPaper = result.pickedPaper;
-        aiResponse = result.aiResponse;
-      }
+      const parentUrl = node.paperUrl ?? "";
+      const parentTitle = node.paperTitle ?? node.label;
+      const result = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
+      pickedPaper = result.pickedPaper;
+      aiResponse = result.aiResponse;
 
       node.messages[node.messages.length - 1] = { role: "ai", text: aiResponse };
       if (s.chatNodeId === parentNodeId) {
@@ -656,7 +597,7 @@ export default function ConstellationView({
       }
       flushGraph();
     }
-  }, [renderMessages, debugMode, flushGraph]);
+  }, [renderMessages, flushGraph]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -980,13 +921,7 @@ export default function ConstellationView({
       if (parent.el) parent.el.style.opacity = "0.6";
 
       try {
-        let papers: { title: string; url: string }[];
-        if (debugMode) {
-          await fakeDelay(400 + Math.random() * 600);
-          papers = fakePapers(3 + Math.floor(Math.random() * 3));
-        } else {
-          papers = await expandSearch(pUrl, pTitle);
-        }
+        const papers = await expandSearch(pUrl, pTitle);
 
         if (parent.el) parent.el.style.opacity = "1";
         if (papers.length === 0) return;
@@ -1071,7 +1006,7 @@ export default function ConstellationView({
         if (parent.el) parent.el.style.opacity = "1";
       }
     },
-    [highlightSubtree, debugMode, flushGraph]
+    [highlightSubtree, flushGraph]
   );
 
   expandNodeRef.current = expandNode;
@@ -1568,13 +1503,10 @@ export default function ConstellationView({
 
   return (
     <>
-      {debugMode && <div className={styles.debugBadge}>Debug Mode</div>}
-
       <a
         href="/"
         className={styles.homeButton}
         title="Back to search"
-        style={debugMode ? { right: 120 } : undefined}
       >
         <House size={16} aria-hidden="true" />
       </a>

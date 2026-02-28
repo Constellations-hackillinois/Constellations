@@ -9,7 +9,6 @@ function ConstellationsInner() {
 
   const topic = searchParams.get("topic") || "";
   const constellationId = searchParams.get("id") || undefined;
-  const debugMode = searchParams.get("debug") === "true";
   const paperTitle = searchParams.get("paperTitle") || undefined;
   const paperUrl = searchParams.get("paperUrl") || undefined;
 
@@ -26,7 +25,6 @@ function ConstellationsInner() {
       topic={topic}
       paperTitle={paperTitle}
       paperUrl={paperUrl}
-      debugMode={debugMode}
       constellationId={constellationId}
     />
   );
