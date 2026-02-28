@@ -3,7 +3,6 @@
 import { useEffect, useRef, useCallback, useState, type FormEvent } from "react";
 import {
   BookOpen,
-  Compass,
   ExternalLink,
   FileText,
   House,
@@ -179,7 +178,6 @@ export default function ConstellationView({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [currentId, setCurrentId] = useState("");
-  const [ragMode, setRagMode] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
@@ -539,9 +537,6 @@ export default function ConstellationView({
     s.panAnimDuration = 1200;
   }, []);
 
-  const ragModeRef = useRef(false);
-  ragModeRef.current = ragMode;
-
   const createNodeRef = useRef<(label: string, depth: number, parentId: number | null, angle: number) => ConstellationNode>(null!);
 
   const sendMessage = useCallback(async () => {
@@ -557,24 +552,6 @@ export default function ConstellationView({
     renderMessages(node);
 
     const parentNodeId = node.id;
-
-    // RAG mode: ask about this paper's content instead of finding related papers
-    if (ragModeRef.current && node.paperUrl) {
-      node.messages.push({ role: "ai", text: "Searching paper content...", icon: "bookOpen" });
-      renderMessages(node);
-      try {
-        const answer = await ragSearchPerPaper(text, node.paperUrl, node.paperTitle ?? node.label, currentIdRef.current);
-        node.messages[node.messages.length - 1] = { role: "ai", text: answer };
-        if (s.chatNodeId === parentNodeId) renderMessages(node);
-        flushGraph();
-      } catch (err) {
-        console.error("[constellation] ragSearchPerPaper failed:", err);
-        node.messages[node.messages.length - 1] = { role: "ai", text: "Something went wrong. Please try again." };
-        if (s.chatNodeId === parentNodeId) renderMessages(node);
-        flushGraph();
-      }
-      return;
-    }
 
     node.messages.push({ role: "ai", text: "Searching for related papers...", icon: "search" });
     renderMessages(node);
@@ -1817,18 +1794,11 @@ export default function ConstellationView({
         </div>
         <div ref={chatMessagesRef} className={styles.chatMessages} />
         <div className={styles.chatInputArea}>
-          <button
-            className={`${styles.chatModeToggle} ${ragMode ? styles.chatModeActive : ""}`}
-            onClick={() => setRagMode((m) => !m)}
-            title={ragMode ? "Mode: Ask this paper (RAG)" : "Mode: Find related papers"}
-          >
-            {ragMode ? <BookOpen size={15} aria-hidden="true" /> : <Compass size={15} aria-hidden="true" />}
-          </button>
           <input
             ref={chatInputRef}
             className={styles.chatInput}
             type="text"
-            placeholder={ragMode ? "Ask about this paper..." : "Ask a follow-up question..."}
+            placeholder="Search for a related paper..."
             autoComplete="off"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
