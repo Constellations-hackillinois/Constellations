@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import {
   BookOpen,
   Compass,
+  ExternalLink,
   FileText,
   House,
   PanelLeftClose,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
 import { storeDocument, ragSearchPerPaper, ragSearchGlobal } from "@/app/actions/supermemory";
-import { extractArxivId } from "@/lib/arxiv";
+import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
 
@@ -190,6 +191,9 @@ export default function ConstellationView({
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfTitle, setPdfTitle] = useState<string>("");
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const currentIdRef = useRef("");
 
@@ -704,10 +708,17 @@ export default function ConstellationView({
         return;
       }
 
-      if (e.key === "Escape" && globalSearchOpen) {
+      if (e.key === "Escape") {
         e.preventDefault();
-        if (globalSearchQuery.trim()) setGlobalSearchQuery("");
-        else setGlobalSearchOpen(false);
+        // Close PDF viewer first (highest z-index)
+        if (pdfUrl) {
+          setPdfUrl(null);
+          return;
+        }
+        if (globalSearchOpen) {
+          if (globalSearchQuery.trim()) setGlobalSearchQuery("");
+          else setGlobalSearchOpen(false);
+        }
       }
     }
 
@@ -717,7 +728,7 @@ export default function ConstellationView({
       document.removeEventListener("mousedown", handleGlobalSearchMouseDown);
       document.removeEventListener("keydown", handleGlobalSearchKeyDown);
     };
-  }, [focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery]);
+  }, [focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery, pdfUrl]);
 
   const createNodeElement = useCallback(
     (node: ConstellationNode) => {
@@ -745,6 +756,16 @@ export default function ConstellationView({
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
+        const n = stateRef.current.nodes.get(node.id);
+        if (n?.paperUrl) {
+          const canonical = toCanonicalArxivPdfUrl(n.paperUrl);
+          if (canonical) {
+            setPdfUrl(canonical);
+            setPdfTitle(n.paperTitle ?? n.label);
+            setPdfLoading(true);
+            return;
+          }
+        }
         showChat(node.id);
       });
 
@@ -1525,8 +1546,48 @@ export default function ConstellationView({
         </div>
       </div>
 
+      {pdfUrl && (
+        <div className={styles.pdfOverlay} onClick={() => setPdfUrl(null)}>
+          <div className={styles.pdfPanel} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.pdfHeader}>
+              <span className={styles.pdfHeaderTitle}>{pdfTitle}</span>
+              <div className={styles.pdfHeaderActions}>
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.pdfOpenTab}
+                  title="Open in new tab"
+                >
+                  <ExternalLink size={14} aria-hidden="true" />
+                </a>
+                <button
+                  className={styles.pdfClose}
+                  onClick={() => setPdfUrl(null)}
+                  title="Close"
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            {pdfLoading && (
+              <div className={styles.pdfLoading}>
+                <div className={styles.pdfSpinner} />
+                Loading paper…
+              </div>
+            )}
+            <iframe
+              className={styles.pdfIframe}
+              src={pdfUrl}
+              title={pdfTitle}
+              onLoad={() => setPdfLoading(false)}
+            />
+          </div>
+        </div>
+      )}
+
       <div className={styles.onboardingHint}>
-        Click a node to chat &middot; Hover &amp; press Expand &middot; Drag to pan &middot; Scroll to zoom
+        Click a node to view paper &middot; Hover for details &middot; Drag to pan &middot; Scroll to zoom
       </div>
     </>
   );
