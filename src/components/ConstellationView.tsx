@@ -126,6 +126,7 @@ export default function ConstellationView({
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
@@ -169,8 +170,8 @@ export default function ConstellationView({
         if (!exists && topic) {
           const entry: SavedConstellation = {
             id: resolvedId,
-            name: paperTitle || topic,
-            topic: paperTitle || topic,
+            name: topic,
+            topic,
             paperTitle,
             paperUrl,
             createdAt: Date.now(),
@@ -185,8 +186,8 @@ export default function ConstellationView({
 
         const entry: SavedConstellation = {
           id: resolvedId,
-          name: paperTitle || topic,
-          topic: paperTitle || topic,
+          name: topic,
+          topic,
           paperTitle,
           paperUrl,
           createdAt: Date.now(),
@@ -234,9 +235,28 @@ export default function ConstellationView({
   }
 
   function handleDelete(id: string) {
-    const updated = constellations.filter((c) => c.id !== id);
-    setConstellations(updated);
+    setDeletingId(id);
     deleteConstellationDB(id);
+
+    setTimeout(() => {
+      const updated = constellations.filter((c) => c.id !== id);
+      setConstellations(updated);
+      setDeletingId(null);
+
+      if (id === currentIdRef.current) {
+        const next = updated[0];
+        if (next) {
+          const params = new URLSearchParams();
+          params.set("topic", next.topic);
+          params.set("id", next.id);
+          if (next.paperTitle) params.set("paperTitle", next.paperTitle);
+          if (next.paperUrl) params.set("paperUrl", next.paperUrl);
+          window.location.href = `/constellations?${params.toString()}`;
+        } else {
+          window.location.href = "/";
+        }
+      }
+    }, 400);
   }
 
   function handleSelect(c: SavedConstellation) {
@@ -1190,9 +1210,22 @@ export default function ConstellationView({
           document.body.style.cursor = "grabbing";
         }
 
-        node.x = s.dragNodeStartX + dx / s.zoom;
-        node.y = s.dragNodeStartY + dy / s.zoom;
-        updateNodePosition(node);
+        const newX = s.dragNodeStartX + dx / s.zoom;
+        const newY = s.dragNodeStartY + dy / s.zoom;
+
+        if (node.depth === 0) {
+          const offsetX = newX - node.x;
+          const offsetY = newY - node.y;
+          s.nodes.forEach((n) => {
+            n.x += offsetX;
+            n.y += offsetY;
+          });
+          updateAllPositions();
+        } else {
+          node.x = newX;
+          node.y = newY;
+          updateNodePosition(node);
+        }
         return;
       }
 
@@ -1459,11 +1492,11 @@ export default function ConstellationView({
     }
 
     function createFreshOrigin() {
-      const originLabel = paperTitle || topic || "Origin";
+      const originLabel = topic || "Origin";
       const originNode = createNode(originLabel, 0, null, 0);
-      if (paperTitle) originNode.paperTitle = paperTitle;
+      originNode.paperTitle = paperTitle || null;
+      originNode.paperUrl = paperUrl || null;
       if (paperUrl) {
-        originNode.paperUrl = paperUrl;
         ingestPaper(paperUrl, paperTitle || null, currentIdRef.current);
       }
     }
@@ -1661,10 +1694,11 @@ export default function ConstellationView({
               )}
               {constellations.map((c) => {
                 const isActive = c.id === currentId;
+                const isDeleting = c.id === deletingId;
                 return (
                   <div
                     key={c.id}
-                    className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""}`}
+                    className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
                   >
                     {renaming === c.id ? (
                       <form

@@ -177,7 +177,7 @@ export async function resolveUrlToPaper(
 
         // Ask Gemini to derive a research topic from the page content
         const topicResp = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-3-flash-preview",
             contents: `Given this article, extract the core research topic in 2-5 words. Return ONLY the topic, nothing else.\n\nTitle: ${pageTitle}\nExcerpt: ${excerpt}`,
         });
         const topic = topicResp.text?.trim() ?? pageTitle;
@@ -258,7 +258,7 @@ export async function expandSearch(
 
     // 2. Ask Gemini to generate a search query for related/cited papers
     const refineResp = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `You are a research assistant. Given a paper, generate a single search query that will find the most important related academic papers — papers it cites, papers that cite it, or papers exploring similar ideas.
 
 ${paperContext}
@@ -291,7 +291,7 @@ Generate a single, broad search query to find 3-5 closely related academic paper
         .join("\n\n");
 
     const pickResp = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `You are a research assistant. Given a source paper and a list of search results, pick the 3 to 5 most relevant and diverse related papers. Prefer papers that cover different aspects or branches of the topic.
 
 Source paper: "${paperTitle}"

@@ -228,7 +228,7 @@ export async function ragSearchPerPaper(
     const context = chunks.join("\n\n---\n\n");
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       contents: `You are a research assistant. Answer the user's question based ONLY on the following excerpts from the paper "${paperTitle}". Be concise and accurate. If the excerpts don't contain enough information, say so.
 
 Paper excerpts:
@@ -288,7 +288,7 @@ export async function ragSearchGlobal(
     const context = chunks.join("\n\n---\n\n");
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       contents: `You are a research assistant. Answer the user's question based on the following excerpts from multiple research papers. Be concise, accurate, and mention which papers (by topic) are relevant when possible.
 
 Paper excerpts:

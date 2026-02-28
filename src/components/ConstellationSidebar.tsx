@@ -25,6 +25,7 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConstellationsDB().then(setConstellations);
@@ -43,9 +44,13 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
   }
 
   function handleDelete(id: string) {
-    const updated = constellations.filter((c) => c.id !== id);
-    setConstellations(updated);
+    setDeletingId(id);
     deleteConstellationDB(id);
+
+    setTimeout(() => {
+      setConstellations((prev) => prev.filter((c) => c.id !== id));
+      setDeletingId(null);
+    }, 400);
   }
 
   function handleSelect(c: SavedConstellation) {
@@ -90,10 +95,11 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
             )}
             {constellations.map((c) => {
               const isActive = c.id === activeId;
+              const isDeleting = c.id === deletingId;
               return (
                 <div
                   key={c.id}
-                  className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""}`}
+                  className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
                 >
                   {renaming === c.id ? (
                     <form
