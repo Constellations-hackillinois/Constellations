@@ -127,7 +127,7 @@ function ConstellationsInner() {
   useEffect(() => {
     const saved = loadConstellations();
     if (currentTopic && !currentId) {
-      const id = crypto.randomUUID();
+      const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
       const entry: SavedConstellation = {
         id,
         name: currentTopic,
@@ -793,6 +793,19 @@ function ConstellationsInner() {
 
   return (
     <>
+      {/* ─── Debug badge ─── */}
+      {debugMode && <div className={styles.debugBadge}>Debug Mode</div>}
+
+      {/* ─── Home button ─── */}
+      <a
+        href="/"
+        className={styles.homeButton}
+        title="Back to search"
+        style={debugMode ? { right: 120 } : undefined}
+      >
+        &#8962;
+      </a>
+
       {/* ─── Sidebar ─── */}
       <button
         className={styles.sidebarToggle}
@@ -874,6 +887,8 @@ function ConstellationsInner() {
       <canvas ref={starCanvasRef} className={styles.starfield} />
       <canvas ref={edgeCanvasRef} className={styles.edges} />
       <div ref={nodesRef} className={styles.nodesContainer} />
+
+      {/* ─── Chat ─── */}
       <div ref={chatRef} className={styles.chatWindow}>
         <div ref={chatHeaderRef} className={styles.chatHeader}>
           Node
@@ -884,7 +899,7 @@ function ConstellationsInner() {
             ref={chatInputRef}
             className={styles.chatInput}
             type="text"
-            placeholder="Ask something..."
+            placeholder="Ask a follow-up question..."
             autoComplete="off"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -897,6 +912,11 @@ function ConstellationsInner() {
             &#9654;
           </button>
         </div>
+      </div>
+
+      {/* ─── Onboarding hint ─── */}
+      <div className={styles.onboardingHint}>
+        Click a node to expand &middot; Hover for details &middot; Drag to pan &middot; Scroll to zoom
       </div>
     </>
   );

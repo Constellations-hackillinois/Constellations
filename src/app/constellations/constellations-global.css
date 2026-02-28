@@ -1,10 +1,9 @@
-/* Override global body styles for the constellations page */
 .constellations-root {
   position: fixed;
   inset: 0;
-  background: #0a0e1a;
+  background: #060a14;
   overflow: hidden;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-geist-sans, "Segoe UI", system-ui, -apple-system, sans-serif);
   user-select: none;
   cursor: grab;
 }

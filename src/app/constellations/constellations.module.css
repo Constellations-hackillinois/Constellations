@@ -1,27 +1,30 @@
 /* ─── Constellation custom properties ─── */
 :root {
-  --c-bg-deep: #0a0e1a;
-  --c-star-dim: rgba(255, 255, 255, 0.15);
-  --c-star-bright: rgba(255, 255, 255, 0.7);
+  --c-bg-deep: #060a14;
+  --c-star-dim: rgba(255, 255, 255, 0.12);
+  --c-star-bright: rgba(255, 255, 255, 0.6);
   --c-node-core: #ffd866;
-  --c-node-glow: rgba(255, 216, 102, 0.6);
-  --c-node-ring: rgba(255, 216, 102, 0.25);
+  --c-node-glow: rgba(255, 216, 102, 0.5);
+  --c-node-ring: rgba(255, 216, 102, 0.18);
   --c-node-child: #7ec8e3;
-  --c-node-child-glow: rgba(126, 200, 227, 0.5);
+  --c-node-child-glow: rgba(126, 200, 227, 0.4);
   --c-node-deep: #c792ea;
-  --c-node-deep-glow: rgba(199, 146, 234, 0.5);
-  --c-edge-color: rgba(255, 255, 255, 0.18);
-  --c-edge-highlight: rgba(255, 216, 102, 0.7);
-  --c-label-color: #e0e0e0;
-  --c-label-shadow: rgba(0, 0, 0, 0.8);
-  --c-chat-bg: rgba(15, 20, 35, 0.92);
-  --c-chat-border: rgba(255, 216, 102, 0.3);
-  --c-chat-text: #d0d0d0;
-  --c-chat-user-bg: rgba(126, 200, 227, 0.15);
-  --c-chat-ai-bg: rgba(199, 146, 234, 0.1);
-  --c-chat-input-bg: rgba(255, 255, 255, 0.06);
+  --c-node-deep-glow: rgba(199, 146, 234, 0.4);
+  --c-edge-color: rgba(255, 255, 255, 0.12);
+  --c-edge-highlight: rgba(255, 216, 102, 0.6);
+  --c-label-color: rgba(255, 255, 255, 0.7);
+  --c-label-shadow: rgba(0, 0, 0, 0.9);
+  --c-chat-bg: rgba(8, 12, 24, 0.88);
+  --c-chat-border: rgba(255, 255, 255, 0.08);
+  --c-chat-accent: rgba(255, 216, 102, 0.25);
+  --c-chat-text: rgba(255, 255, 255, 0.75);
+  --c-chat-user-bg: rgba(126, 200, 227, 0.1);
+  --c-chat-ai-bg: rgba(199, 146, 234, 0.07);
+  --c-chat-input-bg: rgba(255, 255, 255, 0.04);
   --c-ignition-flash: rgba(255, 255, 255, 0.9);
-  --c-pulse-highlight: rgba(255, 216, 102, 0.8);
+  --c-pulse-highlight: rgba(255, 216, 102, 0.7);
+  --c-glass: rgba(255, 255, 255, 0.03);
+  --c-glass-border: rgba(255, 255, 255, 0.08);
 }
 
 /* ─── Canvas layers ─── */
@@ -54,6 +57,54 @@
   pointer-events: none;
 }
 
+/* ─── Debug badge ─── */
+.debugBadge {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 25;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 216, 102, 0.12);
+  border: 1px solid rgba(255, 216, 102, 0.25);
+  color: #ffd866;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+/* ─── Home button ─── */
+.homeButton {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--c-glass-border);
+  background: var(--c-glass);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.homeButton:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  transform: scale(1.05);
+}
+
 /* ─── Sidebar toggle ─── */
 .sidebarToggle {
   position: fixed;
@@ -62,23 +113,25 @@
   z-index: 20;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(10, 14, 26, 0.8);
-  color: #e0e0e0;
-  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid var(--c-glass-border);
+  background: var(--c-glass);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, border-color 0.2s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .sidebarToggle:hover {
-  background: rgba(255, 216, 102, 0.15);
-  border-color: rgba(255, 216, 102, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  transform: scale(1.05);
 }
 
 /* ─── Sidebar panel ─── */
@@ -86,14 +139,14 @@
   position: fixed;
   top: 0;
   left: 0;
-  width: 260px;
+  width: 280px;
   height: 100%;
   z-index: 15;
-  background: rgba(10, 14, 26, 0.92);
-  border-right: 1px solid rgba(255, 216, 102, 0.15);
-  backdrop-filter: blur(14px);
+  background: rgba(6, 10, 20, 0.92);
+  border-right: 1px solid var(--c-glass-border);
+  backdrop-filter: blur(20px);
   transform: translateX(-100%);
-  transition: transform 0.25s ease;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   pointer-events: all;
@@ -104,13 +157,13 @@
 }
 
 .sidebarHeader {
-  padding: 20px 16px 12px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  padding: 24px 20px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #ffd866;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 216, 102, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
@@ -120,13 +173,13 @@
   padding: 8px 0;
 }
 
-.sidebarList::-webkit-scrollbar { width: 4px; }
-.sidebarList::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 2px; }
+.sidebarList::-webkit-scrollbar { width: 3px; }
+.sidebarList::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
 
 .sidebarEmpty {
-  padding: 24px 16px;
+  padding: 32px 20px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.2);
   text-align: center;
 }
 
@@ -134,26 +187,26 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 8px 0 16px;
-  min-height: 38px;
-  transition: background 0.15s;
+  padding: 0 12px 0 20px;
+  min-height: 40px;
+  transition: background 0.2s ease;
 }
 
 .sidebarItem:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .sidebarItemActive {
-  background: rgba(255, 216, 102, 0.08);
-  border-left: 2px solid #ffd866;
-  padding-left: 14px;
+  background: rgba(255, 216, 102, 0.05);
+  border-left: 2px solid rgba(255, 216, 102, 0.5);
+  padding-left: 18px;
 }
 
 .sidebarItemName {
   flex: 1;
   background: none;
   border: none;
-  color: #d0d0d0;
+  color: rgba(255, 255, 255, 0.55);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -162,17 +215,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: inherit;
+  transition: color 0.2s ease;
 }
 
 .sidebarItemName:hover {
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .sidebarItemActions {
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.2s ease;
   flex-shrink: 0;
 }
 
@@ -183,18 +237,18 @@
 .sidebarAction {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.3);
   font-size: 13px;
   cursor: pointer;
-  padding: 4px 5px;
-  border-radius: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
   line-height: 1;
-  transition: color 0.15s, background 0.15s;
+  transition: all 0.2s ease;
 }
 
 .sidebarAction:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .sidebarRenameForm {
@@ -204,14 +258,19 @@
 
 .sidebarRenameInput {
   flex: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 216, 102, 0.4);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 216, 102, 0.3);
+  border-radius: 6px;
   color: #ffffff;
   font-size: 13px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   outline: none;
   font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.sidebarRenameInput:focus {
+  border-color: rgba(255, 216, 102, 0.5);
 }
 
 /* ─── Star nodes ─── */
@@ -220,135 +279,169 @@
   pointer-events: all;
   cursor: pointer;
   transform: translate(-50%, -50%);
-  transition: filter 0.3s ease;
+  transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .starNode:hover {
-  filter: brightness(1.3);
+  filter: brightness(1.4) drop-shadow(0 0 6px rgba(255, 255, 255, 0.15));
 }
 
 .starBody {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, white 0%, var(--c-node-child) 40%, transparent 70%);
-  box-shadow: 0 0 12px var(--c-node-child-glow), 0 0 30px var(--c-node-child-glow);
-  animation: starPulse 3s ease-in-out infinite;
+  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-child) 35%, transparent 70%);
+  box-shadow:
+    0 0 10px var(--c-node-child-glow),
+    0 0 25px rgba(126, 200, 227, 0.2);
+  animation: starPulse 4s ease-in-out infinite;
 }
 
 .depth0 .starBody {
-  width: 30px;
-  height: 30px;
-  background: radial-gradient(circle at 40% 40%, white 0%, var(--c-node-core) 40%, transparent 70%);
-  box-shadow: 0 0 18px var(--c-node-glow), 0 0 45px var(--c-node-ring);
+  width: 28px;
+  height: 28px;
+  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-core) 35%, transparent 70%);
+  box-shadow:
+    0 0 16px var(--c-node-glow),
+    0 0 40px var(--c-node-ring),
+    0 0 80px rgba(255, 216, 102, 0.08);
+  animation: originPulse 4s ease-in-out infinite;
 }
 
 .depthDeep .starBody {
-  background: radial-gradient(circle at 40% 40%, white 0%, var(--c-node-deep) 40%, transparent 70%);
-  box-shadow: 0 0 12px var(--c-node-deep-glow), 0 0 30px var(--c-node-deep-glow);
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.9) 0%, var(--c-node-deep) 35%, transparent 70%);
+  box-shadow:
+    0 0 8px var(--c-node-deep-glow),
+    0 0 20px rgba(199, 146, 234, 0.15);
 }
 
 .starLabel {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
   font-size: 11px;
+  font-weight: 500;
   color: var(--c-label-color);
-  text-shadow: 0 1px 4px var(--c-label-shadow);
+  text-shadow: 0 1px 8px var(--c-label-shadow), 0 0 20px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  opacity: 0.85;
+  opacity: 0.8;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ─── Animations ─── */
 @keyframes starPulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.08); opacity: 0.88; }
+  50% { transform: scale(1.06); opacity: 0.9; }
+}
+
+@keyframes originPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.85; }
 }
 
 @keyframes ignition {
   0% { transform: scale(0); opacity: 0; }
-  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 30px var(--c-ignition-flash), 0 0 60px var(--c-ignition-flash); }
+  40% { transform: scale(1.35); opacity: 1; }
+  60% { transform: scale(0.95); }
   100% { transform: scale(1); opacity: 1; }
 }
 
 .igniting .starBody {
-  animation: ignition 0.5s ease-out forwards, starPulse 3s ease-in-out 0.5s infinite;
+  animation: ignition 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards, starPulse 4s ease-in-out 0.6s infinite;
 }
 
 @keyframes subtreeHighlight {
   0% { filter: brightness(1); }
-  30% { filter: brightness(2.2) drop-shadow(0 0 8px var(--c-pulse-highlight)); }
+  25% { filter: brightness(2) drop-shadow(0 0 10px var(--c-pulse-highlight)); }
   100% { filter: brightness(1); }
 }
 
 .highlighting {
-  animation: subtreeHighlight 1s ease-out forwards;
+  animation: subtreeHighlight 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* ─── Chat window ─── */
 .chatWindow {
   position: fixed;
   z-index: 10;
-  width: 260px;
-  max-height: 300px;
+  width: 300px;
+  max-height: 360px;
   background: var(--c-chat-bg);
   border: 1px solid var(--c-chat-border);
-  border-radius: 10px;
+  border-radius: 14px;
   display: none;
   flex-direction: column;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    0 0 1px rgba(255, 255, 255, 0.1) inset;
   pointer-events: all;
   overflow: hidden;
+  opacity: 0;
+  transform: scale(0.95) translateY(4px);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .visible {
   display: flex;
+  opacity: 1;
+  transform: scale(1) translateY(0);
 }
 
 .chatHeader {
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
   color: var(--c-node-core);
-  border-bottom: 1px solid var(--c-chat-border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chatMessages {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
-  min-height: 60px;
-  max-height: 200px;
+  padding: 10px;
+  min-height: 70px;
+  max-height: 240px;
 }
 
-.chatMessages::-webkit-scrollbar { width: 4px; }
-.chatMessages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 2px; }
+.chatMessages::-webkit-scrollbar { width: 3px; }
+.chatMessages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
 
 .chatMsg {
-  padding: 5px 8px;
-  margin-bottom: 4px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 5px;
+  border-radius: 8px;
   font-size: 12px;
   color: var(--c-chat-text);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .user {
   background: var(--c-chat-user-bg);
   text-align: right;
+  border-bottom-right-radius: 4px;
 }
 
 .ai {
   background: var(--c-chat-ai-bg);
+  border-bottom-left-radius: 4px;
 }
 
 .chatInputArea {
   display: flex;
-  border-top: 1px solid var(--c-chat-border);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
@@ -357,25 +450,57 @@
   background: var(--c-chat-input-bg);
   border: none;
   color: var(--c-chat-text);
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-size: 12px;
   outline: none;
   font-family: inherit;
+  transition: background 0.2s ease;
+}
+
+.chatInput:focus {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .chatInput::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .chatSend {
   background: none;
   border: none;
-  color: var(--c-node-core);
-  padding: 8px 10px;
+  color: rgba(255, 216, 102, 0.6);
+  padding: 10px 12px;
   cursor: pointer;
   font-size: 14px;
+  transition: all 0.2s ease;
 }
 
 .chatSend:hover {
-  color: white;
+  color: rgba(255, 216, 102, 0.95);
+  transform: scale(1.1);
+}
+
+/* ─── Onboarding hint ─── */
+.onboardingHint {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  pointer-events: none;
+  animation: hintFade 6s ease-in-out forwards;
+}
+
+@keyframes hintFade {
+  0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
 }
