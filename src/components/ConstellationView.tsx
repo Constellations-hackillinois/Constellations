@@ -1191,30 +1191,13 @@ export default function ConstellationView({
       updateAllPositions();
     }
 
-    function getMinimapBounds() {
-      let minX = 0, maxX = 0, minY = 0, maxY = 0;
-      let first = true;
-      s.nodes.forEach((n) => {
-        if (first) {
-          minX = maxX = n.x;
-          minY = maxY = n.y;
-          first = false;
-        } else {
-          minX = Math.min(minX, n.x);
-          maxX = Math.max(maxX, n.x);
-          minY = Math.min(minY, n.y);
-          maxY = Math.max(maxY, n.y);
-        }
-      });
-      const pad = 80;
-      const rangeX = Math.max(maxX - minX || 200, 200) + pad * 2;
-      const rangeY = Math.max(maxY - minY || 200, 200) + pad * 2;
-      const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2;
-      minX = cx - rangeX / 2;
-      maxX = cx + rangeX / 2;
-      minY = cy - rangeY / 2;
-      maxY = cy + rangeY / 2;
+    function getViewportBounds() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const minX = -(s.panX + w / 2) / s.zoom;
+      const minY = -(s.panY + h / 2) / s.zoom;
+      const maxX = minX + w / s.zoom;
+      const maxY = minY + h / s.zoom;
       return { minX, maxX, minY, maxY };
     }
 
@@ -1223,7 +1206,7 @@ export default function ConstellationView({
       const ctx = minimapCanvas.getContext("2d");
       if (!ctx) return;
 
-      const { minX, maxX, minY, maxY } = getMinimapBounds();
+      const { minX, maxX, minY, maxY } = getViewportBounds();
       const rangeX = maxX - minX;
       const rangeY = maxY - minY;
       const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
@@ -1235,17 +1218,21 @@ export default function ConstellationView({
         y: oy + (ly - minY) * scale,
       });
 
+      const inView = (x: number, y: number) =>
+        x >= minX && x <= maxX && y >= minY && y <= maxY;
+
       ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
       ctx.fillStyle = "rgba(6, 10, 20, 0.85)";
       ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255, 216, 102, 0.35)";
+      ctx.lineWidth = 1.5;
       ctx.strokeRect(0.5, 0.5, MINIMAP_W - 1, MINIMAP_H - 1);
 
       s.nodes.forEach((node) => {
         if (node.parentId === null) return;
         const par = s.nodes.get(node.parentId);
         if (!par) return;
+        if (!inView(par.x, par.y) && !inView(node.x, node.y)) return;
         const anim = s.edgeAnims.find((a) => a.fromId === node.parentId && a.toId === node.id && a.progress < 1);
         if (anim) return;
         const cp = getEdgeCP(par, node);
@@ -1255,12 +1242,13 @@ export default function ConstellationView({
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
         ctx.quadraticCurveTo(cps.x, cps.y, to.x, to.y);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
         ctx.lineWidth = 0.8;
         ctx.stroke();
       });
 
       s.nodes.forEach((node) => {
+        if (!inView(node.x, node.y)) return;
         const p = toMini(node.x, node.y);
         const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
         ctx.beginPath();
@@ -1268,21 +1256,6 @@ export default function ConstellationView({
         ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth >= 2 ? "rgba(199, 146, 234, 0.7)" : "rgba(126, 200, 227, 0.8)";
         ctx.fill();
       });
-
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const vpLeft = -(s.panX + w / 2) / s.zoom;
-      const vpTop = -(s.panY + h / 2) / s.zoom;
-      const vpW = w / s.zoom;
-      const vpH = h / s.zoom;
-      const vp = toMini(vpLeft, vpTop);
-      const vpScaleW = vpW * scale;
-      const vpScaleH = vpH * scale;
-      ctx.strokeStyle = "rgba(255, 216, 102, 0.5)";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(vp.x, vp.y, vpScaleW, vpScaleH);
-      ctx.fillStyle = "rgba(255, 216, 102, 0.08)";
-      ctx.fillRect(vp.x, vp.y, vpScaleW, vpScaleH);
     }
 
     function handleMinimapClick(e: MouseEvent) {
@@ -1292,7 +1265,7 @@ export default function ConstellationView({
       const my = e.clientY - rect.top;
       if (mx < 0 || mx >= MINIMAP_W || my < 0 || my >= MINIMAP_H) return;
 
-      const { minX, maxX, minY, maxY } = getMinimapBounds();
+      const { minX, maxX, minY, maxY } = getViewportBounds();
       const rangeX = maxX - minX;
       const rangeY = maxY - minY;
       const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
