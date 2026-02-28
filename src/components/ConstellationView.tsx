@@ -1498,11 +1498,11 @@ export default function ConstellationView({
         const hl =
           s.highlights.has(node.id) && s.highlights.has(node.parentId);
         const hlEntry = hl ? s.highlights.get(node.id) : null;
-        let edgeAlpha = 0.18;
+        let edgeAlpha = 0.42;
         if (hlEntry) {
           const elapsed = time - hlEntry.startTime;
           const t = Math.max(0, 1 - elapsed / 1000);
-          edgeAlpha = 0.18 + 0.5 * t;
+          edgeAlpha = 0.42 + 0.5 * t;
         }
 
         edgeCtx.beginPath();
@@ -1511,7 +1511,7 @@ export default function ConstellationView({
         edgeCtx.strokeStyle = hl
           ? `rgba(255,216,102,${edgeAlpha})`
           : `rgba(255,255,255,${edgeAlpha})`;
-        edgeCtx.lineWidth = hl ? 1.8 : 1;
+        edgeCtx.lineWidth = hl ? 2 : 1.2;
         edgeCtx.stroke();
       });
 
@@ -1544,8 +1544,8 @@ export default function ConstellationView({
         edgeCtx.beginPath();
         edgeCtx.moveTo(fs.x, fs.y);
         edgeCtx.quadraticCurveTo(subCpX, subCpY, headX, headY);
-        edgeCtx.strokeStyle = `rgba(255,216,102,${0.12 + 0.2 * p})`;
-        edgeCtx.lineWidth = 1;
+        edgeCtx.strokeStyle = `rgba(255,216,102,${0.35 + 0.45 * p})`;
+        edgeCtx.lineWidth = 1.2;
         edgeCtx.stroke();
 
         const headAlpha = 0.7 * (1 - rawT * 0.4);

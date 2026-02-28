@@ -10,8 +10,8 @@
   --c-node-child-glow: rgba(126, 200, 227, 0.4);
   --c-node-deep: #c792ea;
   --c-node-deep-glow: rgba(199, 146, 234, 0.4);
-  --c-edge-color: rgba(255, 255, 255, 0.12);
-  --c-edge-highlight: rgba(255, 216, 102, 0.6);
+  --c-edge-color: rgba(255, 255, 255, 0.38);
+  --c-edge-highlight: rgba(255, 216, 102, 0.75);
   --c-label-color: rgba(255, 255, 255, 0.7);
   --c-label-shadow: rgba(0, 0, 0, 0.9);
   --c-chat-bg: rgba(8, 12, 24, 0.88);
