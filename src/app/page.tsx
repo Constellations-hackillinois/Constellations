@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { searchTopicWithPaper } from "@/app/actions/search";
 import ConstellationView from "@/components/ConstellationView";
+import ConstellationSidebar from "@/components/ConstellationSidebar";
 import styles from "./home.module.css";
 
 const SUGGESTIONS = [
@@ -130,6 +131,9 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#060a14]">
+      {/* ─── Sidebar (always visible) ─── */}
+      {phase === "landing" && <ConstellationSidebar />}
+
       {/* ─── Constellation layer (mounts after transition) ─── */}
       {phase === "constellation" && (
         <div className={styles.constellationWrapper}>
