@@ -17,6 +17,17 @@ import {
 } from "lucide-react";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
 import { storeDocument, ragSearchPerPaper, ragSearchGlobal } from "@/app/actions/supermemory";
+import {
+  fetchConstellations as fetchConstellationsDB,
+  upsertConstellation,
+  renameConstellation as renameConstellationDB,
+  deleteConstellation as deleteConstellationDB,
+  saveGraphData,
+  loadGraphData,
+  type SavedConstellation,
+  type SerializedGraph,
+  type SerializedNode,
+} from "@/app/actions/constellations";
 import { extractArxivId } from "@/lib/arxiv";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
@@ -136,33 +147,6 @@ function isEditableElement(target: EventTarget | null) {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
-interface SavedConstellation {
-  id: string;
-  name: string;
-  topic: string;
-  paperTitle?: string;
-  paperUrl?: string;
-  createdAt: number;
-}
-
-function loadConstellations(): SavedConstellation[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw: SavedConstellation[] = JSON.parse(localStorage.getItem("constellations") || "[]");
-    const seen = new Set<string>();
-    return raw.filter((c) => {
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
-      return true;
-    });
-  } catch {
-    return [];
-  }
-}
-
-function saveConstellations(list: SavedConstellation[]) {
-  localStorage.setItem("constellations", JSON.stringify(list));
-}
 
 // ─── Props ───
 interface ConstellationViewProps {
@@ -193,70 +177,80 @@ export default function ConstellationView({
 
   const currentIdRef = useRef("");
 
-  useEffect(() => {
-    const saved = loadConstellations();
-
+  // Set the constellation ID synchronously so the canvas useEffect can read it immediately
+  if (!currentIdRef.current) {
     if (constellationIdProp) {
-      const exists = saved.some((c) => c.id === constellationIdProp);
-      setCurrentId(constellationIdProp);
       currentIdRef.current = constellationIdProp;
+    } else if (topic) {
+      currentIdRef.current = crypto.randomUUID();
+    }
+  }
 
-      if (!exists && topic) {
+  useEffect(() => {
+    const resolvedId = currentIdRef.current;
+
+    async function init() {
+      const saved = await fetchConstellationsDB();
+
+      if (resolvedId && constellationIdProp) {
+        setCurrentId(resolvedId);
+        const exists = saved.some((c) => c.id === resolvedId);
+
+        if (!exists && topic) {
+          const entry: SavedConstellation = {
+            id: resolvedId,
+            name: topic,
+            topic,
+            paperTitle,
+            paperUrl,
+            createdAt: Date.now(),
+          };
+          await upsertConstellation(entry);
+          setConstellations([entry, ...saved]);
+        } else {
+          setConstellations(saved);
+        }
+      } else if (resolvedId && topic) {
+        setCurrentId(resolvedId);
+
         const entry: SavedConstellation = {
-          id: constellationIdProp,
+          id: resolvedId,
           name: topic,
           topic,
           paperTitle,
           paperUrl,
           createdAt: Date.now(),
         };
-        const updated = [entry, ...saved];
-        saveConstellations(updated);
-        setConstellations(updated);
+        await upsertConstellation(entry);
+        setConstellations([entry, ...saved]);
+
+        const params = new URLSearchParams(window.location.search);
+        params.set("id", resolvedId);
+        window.history.replaceState(null, "", `?${params.toString()}`);
       } else {
         setConstellations(saved);
       }
-    } else if (topic) {
-      const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
-      setCurrentId(id);
-      currentIdRef.current = id;
-
-      const entry: SavedConstellation = {
-        id,
-        name: topic,
-        topic,
-        paperTitle,
-        paperUrl,
-        createdAt: Date.now(),
-      };
-      const updated = [entry, ...saved];
-      saveConstellations(updated);
-      setConstellations(updated);
-
-      const params = new URLSearchParams(window.location.search);
-      params.set("id", id);
-      window.history.replaceState(null, "", `?${params.toString()}`);
-    } else {
-      setConstellations(saved);
     }
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
+    const newName = renameValue.trim();
     const updated = constellations.map((c) =>
-      c.id === id ? { ...c, name: renameValue.trim() } : c
+      c.id === id ? { ...c, name: newName } : c
     );
-    saveConstellations(updated);
     setConstellations(updated);
     setRenaming(null);
     setRenameValue("");
+    renameConstellationDB(id, newName);
   }
 
   function handleDelete(id: string) {
     const updated = constellations.filter((c) => c.id !== id);
-    saveConstellations(updated);
     setConstellations(updated);
+    deleteConstellationDB(id);
   }
 
   function handleSelect(c: SavedConstellation) {
@@ -282,6 +276,55 @@ export default function ConstellationView({
   const globalSearchMessagesRef = useRef<HTMLDivElement>(null);
   const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const serializeGraph = useCallback((): SerializedGraph => {
+    const s = stateRef.current;
+    const nodes: SerializedNode[] = [];
+    for (const [, node] of s.nodes) {
+      nodes.push({
+        id: node.id,
+        label: node.label,
+        depth: node.depth,
+        parentId: node.parentId,
+        angle: node.angle,
+        x: node.x,
+        y: node.y,
+        children: [...node.children],
+        messages: node.messages.map((m) => ({ role: m.role, text: m.text, icon: m.icon })),
+        paperTitle: node.paperTitle,
+        paperUrl: node.paperUrl,
+      });
+    }
+    return { nextId: s.nextId, nodes };
+  }, []);
+
+  const flushGraph = useCallback(() => {
+    if (!currentIdRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    const graph = serializeGraph();
+    saveGraphData(currentIdRef.current, graph);
+  }, [serializeGraph]);
+
+  const persistGraph = useCallback(() => {
+    if (!currentIdRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      const graph = serializeGraph();
+      saveGraphData(currentIdRef.current, graph);
+    }, 1500);
+  }, [serializeGraph]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => { flushGraph(); };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      flushGraph();
+    };
+  }, [flushGraph]);
 
   const stateRef = useRef({
     nodes: new Map<number, ConstellationNode>(),
@@ -469,10 +512,12 @@ export default function ConstellationView({
         const answer = await ragSearchPerPaper(text, node.paperUrl, node.paperTitle ?? node.label, currentIdRef.current);
         node.messages[node.messages.length - 1] = { role: "ai", text: answer };
         if (s.chatNodeId === parentNodeId) renderMessages(node);
+        flushGraph();
       } catch (err) {
         console.error("[constellation] ragSearchPerPaper failed:", err);
         node.messages[node.messages.length - 1] = { role: "ai", text: "Something went wrong. Please try again." };
         if (s.chatNodeId === parentNodeId) renderMessages(node);
+        flushGraph();
       }
       return;
     }
@@ -547,6 +592,7 @@ export default function ConstellationView({
         s.panAnimStart = performance.now();
         s.panAnimDuration = 800;
       }
+      flushGraph();
     } catch (err) {
       console.error("[constellation] followUpSearch failed:", err);
       node.messages[node.messages.length - 1] = {
@@ -556,8 +602,9 @@ export default function ConstellationView({
       if (s.chatNodeId === parentNodeId) {
         renderMessages(node);
       }
+      flushGraph();
     }
-  }, [renderMessages, debugMode]);
+  }, [renderMessages, debugMode, flushGraph]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -836,9 +883,10 @@ export default function ConstellationView({
 
       s.nodes.set(id, node);
       createNodeElement(node);
+      persistGraph();
       return node;
     },
-    [createNodeElement]
+    [createNodeElement, persistGraph]
   );
 
   createNodeRef.current = createNode;
@@ -947,12 +995,13 @@ export default function ConstellationView({
         s.zoomTarget = idealZoom;
         s.panAnimStart = performance.now();
         s.panAnimDuration = 1000;
+        flushGraph();
       } catch (err) {
         console.error("[constellation] expandSearch failed:", err);
         if (parent.el) parent.el.style.opacity = "1";
       }
     },
-    [highlightSubtree, debugMode]
+    [highlightSubtree, debugMode, flushGraph]
   );
 
   expandNodeRef.current = expandNode;
@@ -1223,13 +1272,61 @@ export default function ConstellationView({
       s.animFrameId = requestAnimationFrame(frame);
     }
 
-    const originLabel = paperTitle || topic || "Origin";
-    const originNode = createNode(originLabel, 0, null, 0);
-    if (paperTitle) originNode.paperTitle = paperTitle;
-    if (paperUrl) {
-      originNode.paperUrl = paperUrl;
-      storeDocument(paperUrl, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+    function restoreGraph(saved: SerializedGraph) {
+      s.nextId = saved.nextId;
+      const parentChildPairs: [number, number][] = [];
+      for (const sn of saved.nodes) {
+        const node: ConstellationNode = {
+          id: sn.id,
+          label: sn.label,
+          depth: sn.depth,
+          parentId: sn.parentId,
+          angle: sn.angle,
+          x: sn.x,
+          y: sn.y,
+          children: [...sn.children],
+          messages: sn.messages.map((m) => ({ role: m.role, text: m.text, icon: m.icon })),
+          el: null,
+          paperTitle: sn.paperTitle,
+          paperUrl: sn.paperUrl,
+          expanding: false,
+        };
+        s.nodes.set(node.id, node);
+        createNodeElement(node);
+        if (sn.parentId !== null) {
+          parentChildPairs.push([sn.parentId, sn.id]);
+        }
+      }
+      for (const [fromId, toId] of parentChildPairs) {
+        s.edgeAnims.push({ fromId, toId, progress: 1, startTime: 0 });
+      }
     }
+
+    function createFreshOrigin() {
+      const originLabel = paperTitle || topic || "Origin";
+      const originNode = createNode(originLabel, 0, null, 0);
+      if (paperTitle) originNode.paperTitle = paperTitle;
+      if (paperUrl) {
+        originNode.paperUrl = paperUrl;
+        storeDocument(paperUrl, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+      }
+    }
+
+    const cid = currentIdRef.current;
+    if (cid) {
+      loadGraphData(cid).then((saved) => {
+        if (saved && saved.nodes.length > 0) {
+          restoreGraph(saved);
+        } else {
+          createFreshOrigin();
+        }
+      }).catch(() => {
+        createFreshOrigin();
+      });
+    } else {
+      createFreshOrigin();
+    }
+
     s.animFrameId = requestAnimationFrame(frame);
 
     return () => {

@@ -8,37 +8,13 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import {
+  fetchConstellations as fetchConstellationsDB,
+  renameConstellation as renameConstellationDB,
+  deleteConstellation as deleteConstellationDB,
+  type SavedConstellation,
+} from "@/app/actions/constellations";
 import styles from "@/app/constellations/constellations.module.css";
-
-interface SavedConstellation {
-  id: string;
-  name: string;
-  topic: string;
-  paperTitle?: string;
-  paperUrl?: string;
-  createdAt: number;
-}
-
-function loadConstellations(): SavedConstellation[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw: SavedConstellation[] = JSON.parse(
-      localStorage.getItem("constellations") || "[]"
-    );
-    const seen = new Set<string>();
-    return raw.filter((c) => {
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
-      return true;
-    });
-  } catch {
-    return [];
-  }
-}
-
-function saveConstellations(list: SavedConstellation[]) {
-  localStorage.setItem("constellations", JSON.stringify(list));
-}
 
 interface ConstellationSidebarProps {
   activeId?: string;
@@ -51,24 +27,25 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
   const [renameValue, setRenameValue] = useState("");
 
   useEffect(() => {
-    setConstellations(loadConstellations());
+    fetchConstellationsDB().then(setConstellations);
   }, []);
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
+    const newName = renameValue.trim();
     const updated = constellations.map((c) =>
-      c.id === id ? { ...c, name: renameValue.trim() } : c
+      c.id === id ? { ...c, name: newName } : c
     );
-    saveConstellations(updated);
     setConstellations(updated);
     setRenaming(null);
     setRenameValue("");
+    renameConstellationDB(id, newName);
   }
 
   function handleDelete(id: string) {
     const updated = constellations.filter((c) => c.id !== id);
-    saveConstellations(updated);
     setConstellations(updated);
+    deleteConstellationDB(id);
   }
 
   function handleSelect(c: SavedConstellation) {
