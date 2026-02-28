@@ -1,5 +1,6 @@
 """Stage 3: Section-by-section densification via Gemini."""
 
+import asyncio
 import logging
 import re
 
@@ -49,10 +50,28 @@ def _split_by_headers(markdown: str) -> list[tuple[str, str]]:
     return sections
 
 
+async def _densify_section(client: genai.Client, header: str, body: str) -> str:
+    """Densify a single section via Gemini."""
+    section_text = f"{header}\n{body}" if header else body
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=DENSIFY_PROMPT + section_text,
+        )
+        result = response.text
+        if result and result.strip():
+            return result.strip()
+        return section_text
+    except Exception as e:
+        logger.warning("Densification failed for section '%s': %s", header[:50], e)
+        return section_text
+
+
 async def densify_markdown(markdown: str) -> str:
     """
     Densify markdown section-by-section using Gemini.
 
+    Processes sections in parallel (max 3 concurrent).
     Falls back to original markdown if Gemini fails.
     """
     if not GEMINI_API_KEY:
@@ -64,30 +83,18 @@ async def densify_markdown(markdown: str) -> str:
         return markdown
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-    densified_parts: list[str] = []
+    semaphore = asyncio.Semaphore(4)
 
-    for header, body in sections:
-        # Skip very short sections (< 100 chars) - not worth densifying
+    async def process_section(header: str, body: str) -> str:
         if len(body) < 100:
             if header:
-                densified_parts.append(f"{header}\n{body}")
-            else:
-                densified_parts.append(body)
-            continue
+                return f"{header}\n{body}"
+            return body
+        async with semaphore:
+            return await _densify_section(client, header, body)
 
-        section_text = f"{header}\n{body}" if header else body
-        try:
-            response = client.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=DENSIFY_PROMPT + section_text,
-            )
-            result = response.text
-            if result and result.strip():
-                densified_parts.append(result.strip())
-            else:
-                densified_parts.append(section_text)
-        except Exception as e:
-            logger.warning("Densification failed for section '%s': %s", header[:50], e)
-            densified_parts.append(section_text)
+    results = await asyncio.gather(
+        *(process_section(header, body) for header, body in sections)
+    )
 
-    return "\n\n".join(densified_parts)
+    return "\n\n".join(results)
