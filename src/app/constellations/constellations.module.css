@@ -37,6 +37,13 @@
   z-index: 0;
 }
 
+.mouseGlow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
 .edges {
   position: fixed;
   top: 0;
@@ -99,6 +106,35 @@
 }
 
 .homeButton:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  transform: scale(1.05);
+}
+
+/* ─── Return to origin button ─── */
+.returnToOrigin {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--c-glass-border);
+  background: var(--c-glass);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+}
+
+.returnToOrigin:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.85);
@@ -287,34 +323,36 @@
 }
 
 .starBody {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-child) 35%, transparent 70%);
-  box-shadow:
-    0 0 10px var(--c-node-child-glow),
-    0 0 25px rgba(126, 200, 227, 0.2);
+  width: 26px;
+  height: 26px;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-child) 30%, rgba(126, 200, 227, 0.4) 60%, transparent 100%);
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
+  filter:
+    drop-shadow(0 0 6px var(--c-node-child-glow))
+    drop-shadow(0 0 18px rgba(126, 200, 227, 0.25));
   animation: starPulse 4s ease-in-out infinite;
 }
 
 .depth0 .starBody {
-  width: 28px;
-  height: 28px;
-  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-core) 35%, transparent 70%);
-  box-shadow:
-    0 0 16px var(--c-node-glow),
-    0 0 40px var(--c-node-ring),
-    0 0 80px rgba(255, 216, 102, 0.08);
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.95) 0%, var(--c-node-core) 28%, rgba(255, 216, 102, 0.35) 55%, transparent 100%);
+  clip-path: polygon(50% 0%, 60% 36%, 100% 50%, 60% 64%, 50% 100%, 40% 64%, 0% 50%, 40% 36%);
+  filter:
+    drop-shadow(0 0 10px var(--c-node-glow))
+    drop-shadow(0 0 30px var(--c-node-ring))
+    drop-shadow(0 0 60px rgba(255, 216, 102, 0.1));
   animation: originPulse 4s ease-in-out infinite;
 }
 
 .depthDeep .starBody {
-  width: 14px;
-  height: 14px;
-  background: radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.9) 0%, var(--c-node-deep) 35%, transparent 70%);
-  box-shadow:
-    0 0 8px var(--c-node-deep-glow),
-    0 0 20px rgba(199, 146, 234, 0.15);
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.92) 0%, var(--c-node-deep) 30%, rgba(199, 146, 234, 0.35) 60%, transparent 100%);
+  clip-path: polygon(50% 0%, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0% 50%, 37% 37%);
+  filter:
+    drop-shadow(0 0 5px var(--c-node-deep-glow))
+    drop-shadow(0 0 15px rgba(199, 146, 234, 0.2));
 }
 
 .starLabel {
@@ -345,15 +383,41 @@
   50% { transform: scale(1.1); opacity: 0.85; }
 }
 
+/* Staged ignition: invisible → overshoot → settle */
 @keyframes ignition {
-  0% { transform: scale(0); opacity: 0; }
-  40% { transform: scale(1.35); opacity: 1; }
-  60% { transform: scale(0.95); }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(1.08);
+    opacity: 0.75;
+  }
+  65% {
+    transform: scale(0.97);
+    opacity: 0.92;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .igniting .starBody {
-  animation: ignition 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards, starPulse 4s ease-in-out 0.6s infinite;
+  animation:
+    ignition 650ms cubic-bezier(0.22, 1, 0.36, 1) var(--ignition-delay, 0ms) both,
+    starPulse 4s ease-in-out calc(var(--ignition-delay, 0ms) + 650ms) infinite;
+}
+
+/* Parent pulse when emitting child nodes */
+@keyframes spawnEmit {
+  0% { filter: brightness(1); }
+  25% { filter: brightness(1.7) drop-shadow(0 0 18px rgba(255, 216, 102, 0.45)); }
+  100% { filter: brightness(1); }
+}
+
+.spawning {
+  animation: spawnEmit 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes subtreeHighlight {

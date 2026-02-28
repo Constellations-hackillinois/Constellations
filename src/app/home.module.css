@@ -1,0 +1,159 @@
+/* ─── Input bar (ChatGPT-style pill) ─── */
+.inputBar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 52px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0 6px 0 22px;
+  gap: 8px;
+  backdrop-filter: blur(16px);
+  transition: opacity 300ms ease, transform 500ms cubic-bezier(0.4, 0, 0.2, 1), border-color 300ms ease;
+}
+
+.inputBar:focus-within {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.inputBarCollapsing {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+}
+
+.input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+.sendBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 200ms ease;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.sendBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ─── Transition star (fixed at viewport center) ─── */
+.starWrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 600ms ease, transform 600ms ease;
+}
+
+.starWrapperFading {
+  opacity: 0;
+  transform: scale(1.4);
+}
+
+.transitionStar {
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.95) 0%,
+    #ffd866 25%,
+    rgba(255, 216, 102, 0.35) 55%,
+    transparent 100%
+  );
+  clip-path: polygon(
+    50% 0%, 62% 38%, 100% 50%, 62% 62%,
+    50% 100%, 38% 62%, 0% 50%, 38% 38%
+  );
+  opacity: 0;
+  transform: scale(0) rotate(-90deg);
+  filter:
+    drop-shadow(0 0 12px rgba(255, 216, 102, 0.4))
+    drop-shadow(0 0 30px rgba(255, 216, 102, 0.2));
+}
+
+.starActive {
+  animation:
+    starAppear 700ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both,
+    starGlow 800ms ease-in-out 900ms infinite alternate;
+}
+
+@keyframes starAppear {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-90deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.4) rotate(15deg);
+  }
+  75% {
+    transform: scale(0.92) rotate(-5deg);
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes starGlow {
+  0% {
+    transform: scale(1);
+    filter:
+      drop-shadow(0 0 12px rgba(255, 216, 102, 0.4))
+      drop-shadow(0 0 30px rgba(255, 216, 102, 0.2));
+  }
+  100% {
+    transform: scale(1.15);
+    filter:
+      drop-shadow(0 0 22px rgba(255, 216, 102, 0.6))
+      drop-shadow(0 0 50px rgba(255, 216, 102, 0.35))
+      drop-shadow(0 0 90px rgba(255, 216, 102, 0.12));
+  }
+}
+
+/* ─── Constellation wrapper (for inline rendering) ─── */
+.constellationWrapper {
+  position: fixed;
+  inset: 0;
+  background: #060a14;
+  overflow: hidden;
+  font-family: var(--font-geist-sans, "Segoe UI", system-ui, -apple-system, sans-serif);
+  user-select: none;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='24' viewBox='0 0 20 24'%3E%3Cpath d='M2 2 L2 18 L6 14 L10 21 L13 19 L9 12 L15 12 Z' fill='white' stroke='white' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E") 2 2, default;
+}
