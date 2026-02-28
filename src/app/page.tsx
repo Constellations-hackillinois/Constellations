@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { searchTopicWithPaper } from "@/app/actions/search";
+import { searchTopicWithPaper, resolveUrlToPaper } from "@/app/actions/search";
 import ConstellationView from "@/components/ConstellationView";
 import ConstellationSidebar from "@/components/ConstellationSidebar";
 import styles from "./home.module.css";
@@ -78,6 +78,7 @@ export default function Home() {
   const [starFading, setStarFading] = useState(false);
   const [debugMode, setDebugMode] = useState(true);
   const [constellationId, setConstellationId] = useState<string | undefined>();
+  const [displayTopic, setDisplayTopic] = useState("");
   const landingGlowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,19 +95,40 @@ export default function Home() {
     return () => document.removeEventListener("mousemove", handleGlow);
   }, []);
 
+  function isUrl(text: string): boolean {
+    try {
+      const u = new URL(text.trim());
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
   function handleSubmit() {
     if (!query.trim() || phase !== "landing") return;
     const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
     setConstellationId(id);
     setPhase("collapsing");
 
-    const search = debugMode
-      ? new Promise<null>((r) => setTimeout(() => r(null), 800))
-      : searchTopicWithPaper(query).catch(() => null);
+    const inputIsUrl = isUrl(query.trim());
+
+    const search = inputIsUrl
+      ? resolveUrlToPaper(query.trim()).then((paper) =>
+          paper ? { results: [], pickedPaper: paper } : null
+        ).catch(() => null)
+      : debugMode
+        ? new Promise<null>((r) => setTimeout(() => r(null), 800))
+        : searchTopicWithPaper(query).catch(() => null);
+
     const minDelay = new Promise<void>((r) => setTimeout(r, 1600));
 
     Promise.all([search, minDelay]).then(([data]) => {
       if (data?.pickedPaper) setPaperData(data.pickedPaper);
+
+      const resolvedTopic = inputIsUrl && data?.pickedPaper
+        ? data.pickedPaper.title
+        : query;
+      setDisplayTopic(resolvedTopic);
 
       setPhase("constellation");
 
@@ -114,7 +136,7 @@ export default function Home() {
 
       setTimeout(() => {
         const params = new URLSearchParams();
-        params.set("topic", query);
+        params.set("topic", resolvedTopic);
         params.set("id", id);
         if (!debugMode) params.set("debug", "false");
         if (data?.pickedPaper) {
@@ -138,7 +160,7 @@ export default function Home() {
       {phase === "constellation" && (
         <div className={styles.constellationWrapper}>
           <ConstellationView
-            topic={query}
+            topic={displayTopic || query}
             paperTitle={paperData?.title}
             paperUrl={paperData?.url}
             debugMode={debugMode}
@@ -196,7 +218,7 @@ export default function Home() {
                       handleSubmit();
                     }
                   }}
-                  placeholder="What do you want to explore?"
+                  placeholder="Search a topic or paste an article URL..."
                   className={styles.input}
                   disabled={phase !== "landing"}
                   autoComplete="off"

@@ -219,8 +219,8 @@ export default function ConstellationView({
         if (!exists && topic) {
           const entry: SavedConstellation = {
             id: resolvedId,
-            name: topic,
-            topic,
+            name: paperTitle || topic,
+            topic: paperTitle || topic,
             paperTitle,
             paperUrl,
             createdAt: Date.now(),
@@ -235,8 +235,8 @@ export default function ConstellationView({
 
         const entry: SavedConstellation = {
           id: resolvedId,
-          name: topic,
-          topic,
+          name: paperTitle || topic,
+          topic: paperTitle || topic,
           paperTitle,
           paperUrl,
           createdAt: Date.now(),

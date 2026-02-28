@@ -2,7 +2,7 @@
 
 import Exa from "exa-js";
 import { GoogleGenAI } from "@google/genai";
-import { isArxivUrl, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
+import { isArxivUrl, extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 
 export interface SearchResult {
     title: string;
@@ -113,6 +113,98 @@ Reply with ONLY a JSON object with two keys: "title" and "url". No explanation, 
     }
     console.warn("[search] Falling back to first result");
     return { title: results[0].title, url: results[0].url };
+}
+
+export async function resolveUrlToPaper(
+    url: string
+): Promise<PickedPaper | null> {
+    const exa = new Exa(process.env.EXA_API_KEY);
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const canonicalUrl = toCanonicalArxivPdfUrl(url);
+
+    // If it's an arXiv URL, resolve the title
+    if (canonicalUrl) {
+        const arxivId = extractArxivId(url);
+
+        // Try getContents first
+        try {
+            const contentsResp = await exa.getContents([canonicalUrl], {
+                text: { maxCharacters: 500 },
+            });
+            const result = contentsResp.results?.[0];
+            if (result?.title) {
+                console.log(`[resolveUrl] arXiv resolved via getContents: "${result.title}" → ${canonicalUrl}`);
+                return { title: result.title, url: canonicalUrl };
+            }
+        } catch (err) {
+            console.warn("[resolveUrl] Exa getContents failed for arXiv URL:", err);
+        }
+
+        // Fallback: search for the arXiv ID to get the title
+        try {
+            const searchResp = await exa.searchAndContents(`arxiv ${arxivId}`, {
+                numResults: 1,
+                type: "auto",
+                includeDomains: ["arxiv.org"],
+                highlights: { numSentences: 1, highlightsPerUrl: 1 },
+            });
+            const found = searchResp.results?.[0];
+            if (found?.title) {
+                const cleanTitle = found.title.replace(/^\[[\d.]+\]\s*/, "");
+                console.log(`[resolveUrl] arXiv resolved via search: "${cleanTitle}" → ${canonicalUrl}`);
+                return { title: cleanTitle, url: canonicalUrl };
+            }
+        } catch (err) {
+            console.warn("[resolveUrl] Exa search fallback failed:", err);
+        }
+
+        return { title: `arXiv:${arxivId ?? url}`, url: canonicalUrl };
+    }
+
+    // Non-arXiv URL: use Exa to find it, then search for related arXiv paper
+    try {
+        const searchResp = await exa.searchAndContents(url, {
+            numResults: 1,
+            type: "auto",
+            highlights: { numSentences: 2, highlightsPerUrl: 1 },
+        });
+        const found = searchResp.results?.[0];
+        const pageTitle = found?.title ?? "Untitled";
+        const highlights = (found as { highlights?: string[] })?.highlights ?? [];
+        const excerpt = highlights.join(" ") || "";
+
+        // Ask Gemini to derive a research topic from the page content
+        const topicResp = await ai.models.generateContent({
+            model: "gemini-2.0-flash",
+            contents: `Given this article, extract the core research topic in 2-5 words. Return ONLY the topic, nothing else.\n\nTitle: ${pageTitle}\nExcerpt: ${excerpt}`,
+        });
+        const topic = topicResp.text?.trim() ?? pageTitle;
+
+        // Search for a related arXiv paper
+        const arxivResp = await exa.searchAndContents(topic, {
+            numResults: 3,
+            type: "auto",
+            category: "research paper",
+            includeDomains: ["arxiv.org"],
+            highlights: { numSentences: 2, highlightsPerUrl: 1 },
+        });
+        const arxivResults = normalizeSearchResults(arxivResp.results);
+        if (arxivResults.length > 0) {
+            const picked = await pickBestPaper(topic, arxivResults);
+            if (picked) {
+                console.log(`[resolveUrl] Non-arXiv → topic "${topic}" → paper "${picked.title}"`);
+                return picked;
+            }
+        }
+
+        // No arXiv paper found; return the original URL as-is
+        console.log(`[resolveUrl] Non-arXiv fallback: "${pageTitle}" → ${url}`);
+        return { title: pageTitle, url };
+    } catch (err) {
+        console.error("[resolveUrl] Failed to resolve non-arXiv URL:", err);
+        return { title: "Untitled", url };
+    }
 }
 
 export async function searchTopic(query: string): Promise<SearchResult[]> {
