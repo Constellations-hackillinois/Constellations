@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { searchTopicWithPaper, resolveUrlToPaper } from "@/app/actions/search";
 import ConstellationView from "@/components/ConstellationView";
 import ConstellationSidebar from "@/components/ConstellationSidebar";
+import { normalizePaperTitle, normalizeRequiredTitle } from "@/lib/papers";
 import styles from "./home.module.css";
 
 const SUGGESTIONS = [
@@ -132,11 +133,18 @@ export default function Home() {
     const minDelay = new Promise<void>((r) => setTimeout(r, 1600));
 
     Promise.all([search, minDelay]).then(([data]) => {
-      if (data?.pickedPaper) setPaperData(data.pickedPaper);
+      const pickedPaper = data?.pickedPaper
+        ? {
+            ...data.pickedPaper,
+            title: normalizePaperTitle(data.pickedPaper.title) ?? data.pickedPaper.title,
+          }
+        : null;
 
-      const resolvedTopic = inputIsUrl && data?.pickedPaper
-        ? data.pickedPaper.title
-        : query;
+      if (pickedPaper) setPaperData(pickedPaper);
+
+      const resolvedTopic = inputIsUrl && pickedPaper
+        ? normalizeRequiredTitle(pickedPaper.title, pickedPaper.title)
+        : normalizeRequiredTitle(query, query);
       setDisplayTopic(resolvedTopic);
 
       setPhase("constellation");
@@ -147,9 +155,9 @@ export default function Home() {
         const params = new URLSearchParams();
         params.set("topic", resolvedTopic);
         params.set("id", id);
-        if (data?.pickedPaper) {
-          params.set("paperTitle", data.pickedPaper.title);
-          params.set("paperUrl", data.pickedPaper.url);
+        if (pickedPaper) {
+          params.set("paperTitle", pickedPaper.title);
+          params.set("paperUrl", pickedPaper.url);
         }
         window.history.replaceState(null, "", `/constellations?${params.toString()}`);
       }, 800);

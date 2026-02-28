@@ -1,6 +1,12 @@
 "use server";
 
 import { supabase } from "@/lib/supabase";
+import {
+  normalizePaperTitle,
+  normalizePaperUrl,
+  normalizeRequiredTitle,
+  reconcilePaperTitleRecords,
+} from "@/lib/papers";
 
 export interface ConstellationRow {
   id: string;
@@ -43,13 +49,55 @@ export interface SerializedGraph {
 }
 
 function rowToConstellation(row: ConstellationRow): SavedConstellation {
+  const normalizedName = normalizeRequiredTitle(row.name || row.title, row.name || row.title || "Untitled");
+  const normalizedTopic = normalizeRequiredTitle(row.topic, normalizedName);
+
   return {
     id: row.id,
-    name: row.name || row.title,
-    topic: row.topic,
-    paperTitle: row.paper_title ?? undefined,
-    paperUrl: row.paper_url ?? undefined,
+    name: normalizedName,
+    topic: normalizedTopic,
+    paperTitle: normalizePaperTitle(row.paper_title) ?? undefined,
+    paperUrl: normalizePaperUrl(row.paper_url) ?? undefined,
     createdAt: new Date(row.created_at).getTime(),
+  };
+}
+
+function sanitizeGraph(
+  graph: SerializedGraph | null,
+  rootOverride?: { paperTitle?: string | null; paperUrl?: string | null; rootLabel?: string | null }
+): SerializedGraph | null {
+  if (!graph) return null;
+
+  const originalNodes = graph.nodes;
+  const normalizedRootLabel = rootOverride?.rootLabel
+    ? normalizeRequiredTitle(rootOverride.rootLabel, rootOverride.rootLabel)
+    : null;
+
+  const normalizedNodes = reconcilePaperTitleRecords(originalNodes, rootOverride).map((node, index) => {
+    const originalNode = originalNodes[index];
+    const originalLabel = originalNode?.label ?? node.label;
+    const originalPaperTitle = normalizePaperTitle(originalNode?.paperTitle);
+    const normalizedLabel = normalizePaperTitle(originalLabel);
+    const shouldSyncLabel =
+      node.paperTitle &&
+      (node.depth > 0 ||
+        (normalizedLabel &&
+          (normalizedLabel === originalPaperTitle || normalizedLabel === node.paperTitle)));
+
+    return {
+      ...node,
+      label:
+        node.depth === 0 && normalizedRootLabel
+          ? normalizedRootLabel
+          : shouldSyncLabel && node.paperTitle
+            ? node.paperTitle
+            : originalLabel,
+    };
+  });
+
+  return {
+    ...graph,
+    nodes: normalizedNodes,
   };
 }
 
@@ -69,14 +117,19 @@ export async function fetchConstellations(): Promise<SavedConstellation[]> {
 
 export async function upsertConstellation(c: SavedConstellation): Promise<void> {
   const now = new Date(c.createdAt).toISOString();
+  const name = normalizeRequiredTitle(c.name, c.name || "Untitled");
+  const topic = normalizeRequiredTitle(c.topic, name);
+  const paperTitle = normalizePaperTitle(c.paperTitle);
+  const paperUrl = normalizePaperUrl(c.paperUrl);
+
   const { error } = await supabase.from("constellations").upsert(
     {
       id: c.id,
-      title: c.name,
-      name: c.name,
-      topic: c.topic,
-      paper_title: c.paperTitle ?? null,
-      paper_url: c.paperUrl ?? null,
+      title: name,
+      name,
+      topic,
+      paper_title: paperTitle,
+      paper_url: paperUrl,
       created_at: now,
       updated_at: now,
     },
@@ -89,19 +142,33 @@ export async function upsertConstellation(c: SavedConstellation): Promise<void> 
 }
 
 export async function renameConstellation(id: string, name: string): Promise<void> {
+  const normalizedName = normalizeRequiredTitle(name, name || "Untitled");
+
   const { data: existing } = await supabase
     .from("constellations")
-    .select("graph_data")
+    .select("graph_data, paper_title, paper_url, title, name")
     .eq("id", id)
     .single();
 
   let graphPatch: SerializedGraph | undefined;
-  const graph = (existing as { graph_data: SerializedGraph | null } | null)?.graph_data;
+  const existingRow = existing as {
+    graph_data: SerializedGraph | null;
+    paper_title: string | null;
+    paper_url: string | null;
+    title: string | null;
+    name: string | null;
+  } | null;
+
+  const graph = sanitizeGraph(existingRow?.graph_data ?? null, {
+    paperTitle: existingRow?.paper_title ?? null,
+    paperUrl: existingRow?.paper_url ?? null,
+    rootLabel: normalizedName,
+  });
+
   if (graph && graph.nodes) {
     const origin = graph.nodes.find((n) => n.depth === 0);
     if (origin) {
-      origin.label = name;
-      origin.paperTitle = name;
+      origin.label = normalizedName;
       graphPatch = graph;
     }
   }
@@ -109,8 +176,8 @@ export async function renameConstellation(id: string, name: string): Promise<voi
   const { error } = await supabase
     .from("constellations")
     .update({
-      name,
-      title: name,
+      name: normalizedName,
+      title: normalizedName,
       updated_at: new Date().toISOString(),
       ...(graphPatch ? { graph_data: graphPatch } : {}),
     })
@@ -133,9 +200,10 @@ export async function deleteConstellation(id: string): Promise<void> {
 }
 
 export async function saveGraphData(constellationId: string, graph: SerializedGraph): Promise<void> {
+  const normalizedGraph = sanitizeGraph(graph);
   const { error } = await supabase
     .from("constellations")
-    .update({ graph_data: graph, updated_at: new Date().toISOString() })
+    .update({ graph_data: normalizedGraph, updated_at: new Date().toISOString() })
     .eq("id", constellationId);
 
   if (error) {
@@ -146,7 +214,7 @@ export async function saveGraphData(constellationId: string, graph: SerializedGr
 export async function loadGraphData(constellationId: string): Promise<SerializedGraph | null> {
   const { data, error } = await supabase
     .from("constellations")
-    .select("graph_data")
+    .select("graph_data, paper_title, paper_url, title, name")
     .eq("id", constellationId)
     .single();
 
@@ -155,5 +223,17 @@ export async function loadGraphData(constellationId: string): Promise<Serialized
     return null;
   }
 
-  return (data as { graph_data: SerializedGraph | null }).graph_data;
+  const row = data as {
+    graph_data: SerializedGraph | null;
+    paper_title: string | null;
+    paper_url: string | null;
+    title: string | null;
+    name: string | null;
+  };
+
+  return sanitizeGraph(row.graph_data, {
+    paperTitle: row.paper_title,
+    paperUrl: row.paper_url,
+    rootLabel: row.name || row.title,
+  });
 }

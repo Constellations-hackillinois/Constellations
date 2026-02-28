@@ -3,13 +3,14 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import ConstellationView from "@/components/ConstellationView";
+import { normalizePaperTitle, normalizeRequiredTitle } from "@/lib/papers";
 
 function ConstellationsInner() {
   const searchParams = useSearchParams();
 
-  const topic = searchParams.get("topic") || "";
+  const topic = normalizeRequiredTitle(searchParams.get("topic"), "") || "";
   const constellationId = searchParams.get("id") || undefined;
-  const paperTitle = searchParams.get("paperTitle") || undefined;
+  const paperTitle = normalizePaperTitle(searchParams.get("paperTitle")) || undefined;
   const paperUrl = searchParams.get("paperUrl") || undefined;
 
   if (!topic) {

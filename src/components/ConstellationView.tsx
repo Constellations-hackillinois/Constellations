@@ -29,6 +29,7 @@ import {
   type SerializedGraph,
   type SerializedNode,
 } from "@/app/actions/constellations";
+import { normalizePaperTitle, normalizePaperUrl, normalizeRequiredTitle } from "@/lib/papers";
 
 interface PdfChatMessage {
   id: string;
@@ -122,6 +123,9 @@ export default function ConstellationView({
   paperUrl,
   constellationId: constellationIdProp,
 }: ConstellationViewProps) {
+  const normalizedTopic = normalizeRequiredTitle(topic, topic || "Origin");
+  const normalizedPaperTitle = normalizePaperTitle(paperTitle);
+  const normalizedPaperUrl = normalizePaperUrl(paperUrl);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -170,10 +174,10 @@ export default function ConstellationView({
         if (!exists && topic) {
           const entry: SavedConstellation = {
             id: resolvedId,
-            name: topic,
-            topic,
-            paperTitle,
-            paperUrl,
+            name: normalizedTopic,
+            topic: normalizedTopic,
+            paperTitle: normalizedPaperTitle ?? undefined,
+            paperUrl: normalizedPaperUrl ?? undefined,
             createdAt: Date.now(),
           };
           await upsertConstellation(entry);
@@ -186,10 +190,10 @@ export default function ConstellationView({
 
         const entry: SavedConstellation = {
           id: resolvedId,
-          name: topic,
-          topic,
-          paperTitle,
-          paperUrl,
+          name: normalizedTopic,
+          topic: normalizedTopic,
+          paperTitle: normalizedPaperTitle ?? undefined,
+          paperUrl: normalizedPaperUrl ?? undefined,
           createdAt: Date.now(),
         };
         await upsertConstellation(entry);
@@ -208,7 +212,7 @@ export default function ConstellationView({
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
-    const newName = renameValue.trim();
+    const newName = normalizeRequiredTitle(renameValue, renameValue.trim());
     const updated = constellations.map((c) =>
       c.id === id ? { ...c, name: newName } : c
     );
@@ -1412,16 +1416,9 @@ export default function ConstellationView({
       updateAllPositions();
     }
 
-    function handleGlowMove(e: MouseEvent) {
-      if (glowRef.current) {
-        glowRef.current.style.background =
-          `radial-gradient(600px circle at ${e.clientX}px ${e.clientY}px, rgba(255,216,102,0.04), rgba(126,200,227,0.018) 50%, transparent 80%)`;
-      }
-    }
 
     document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mousemove", handleGlowMove);
     document.addEventListener("mouseup", handleMouseUp);
     document.addEventListener("wheel", handleWheel, { passive: false });
 
@@ -1632,12 +1629,12 @@ export default function ConstellationView({
     }
 
     function createFreshOrigin() {
-      const originLabel = topic || "Origin";
+      const originLabel = normalizedTopic;
       const originNode = createNode(originLabel, 0, null, 0);
-      originNode.paperTitle = paperTitle || null;
-      originNode.paperUrl = paperUrl || null;
-      if (paperUrl) {
-        ingestPaper(paperUrl, paperTitle || null, currentIdRef.current);
+      originNode.paperTitle = normalizedPaperTitle;
+      originNode.paperUrl = normalizedPaperUrl;
+      if (normalizedPaperUrl) {
+        ingestPaper(normalizedPaperUrl, normalizedPaperTitle, currentIdRef.current);
       }
     }
 
@@ -1663,7 +1660,6 @@ export default function ConstellationView({
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("mousedown", handleMouseDown);
       document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mousemove", handleGlowMove);
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("wheel", handleWheel);
       chat.removeEventListener("mousedown", chatMouseDown);
@@ -1902,7 +1898,6 @@ export default function ConstellationView({
       </aside>
 
       <canvas ref={starCanvasRef} className={styles.starfield} />
-      <div ref={glowRef} className={styles.mouseGlow} />
       <canvas ref={edgeCanvasRef} className={styles.edges} />
       <canvas
         ref={minimapCanvasRef}
@@ -2119,7 +2114,10 @@ export default function ConstellationView({
                     pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
                   });
                   try {
-                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
+                    const history = pdfChatMessages
+                      .filter((m) => !m.loading && m.text)
+                      .map((m) => ({ role: m.role, text: m.text }));
+                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current, history);
                     setPdfChatMessages((prev) =>
                       prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
                     );
