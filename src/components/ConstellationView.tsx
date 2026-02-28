@@ -1443,16 +1443,9 @@ export default function ConstellationView({
       updateAllPositions();
     }
 
-    function handleGlowMove(e: MouseEvent) {
-      if (glowRef.current) {
-        glowRef.current.style.background =
-          `radial-gradient(600px circle at ${e.clientX}px ${e.clientY}px, rgba(255,216,102,0.04), rgba(126,200,227,0.018) 50%, transparent 80%)`;
-      }
-    }
 
     document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mousemove", handleGlowMove);
     document.addEventListener("mouseup", handleMouseUp);
     document.addEventListener("wheel", handleWheel, { passive: false });
 
@@ -1694,7 +1687,6 @@ export default function ConstellationView({
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("mousedown", handleMouseDown);
       document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mousemove", handleGlowMove);
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("wheel", handleWheel);
       chat.removeEventListener("mousedown", chatMouseDown);
@@ -1933,7 +1925,6 @@ export default function ConstellationView({
       </aside>
 
       <canvas ref={starCanvasRef} className={styles.starfield} />
-      <div ref={glowRef} className={styles.mouseGlow} />
       <canvas ref={edgeCanvasRef} className={styles.edges} />
       <canvas
         ref={minimapCanvasRef}
