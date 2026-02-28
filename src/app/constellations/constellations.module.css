@@ -507,6 +507,30 @@
   animation: subtreeHighlight 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Node collapse / deletion animation */
+@keyframes nodeCollapse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+
+  30% {
+    filter: brightness(1.8) drop-shadow(0 0 12px rgba(255, 80, 80, 0.5));
+  }
+
+  100% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(0.3);
+  }
+}
+
+.collapsing {
+  animation: nodeCollapse 500ms cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  pointer-events: none;
+}
+
 /* ─── Chat window ─── */
 .chatWindow {
   position: fixed;
@@ -578,6 +602,30 @@
   background: rgba(255, 216, 102, 0.15);
   border-color: rgba(255, 216, 102, 0.4);
   color: rgba(255, 216, 102, 1);
+}
+
+.chatDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 80, 80, 0.22);
+  background: rgba(255, 80, 80, 0.07);
+  color: rgba(255, 80, 80, 0.7);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.chatDeleteBtn:hover {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: rgba(255, 80, 80, 1);
 }
 
 .chatMessages {

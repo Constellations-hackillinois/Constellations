@@ -116,6 +116,42 @@ async function createNew(docUrl: string, key: string, constellationId: string, n
 }
 
 /**
+ * Remove a constellation ID tag from a document. If no constellation IDs remain, the doc is left
+ * (still useful for other constellations). We only untag, never delete documents outright.
+ */
+export async function removeDocumentFromConstellation(docUrl: string, constellationId: string): Promise<string> {
+  const key = docKeyFromUrl(docUrl);
+  if (!key) return `skipped:non-arxiv:${docUrl}`;
+
+  try {
+    const listResult = await supermemoryRequest("/v3/documents/list", "POST", {
+      containerTags: [SUPERMEMORY_CONTAINER_TAG],
+      filters: {
+        AND: [{ filterType: "metadata", key: "doc_key", value: key }],
+      },
+    });
+    const docs = listResult.documents ?? listResult.results ?? [];
+    if (docs.length === 0) return `not-found:${key}`;
+
+    const existing = docs[0];
+    const ids: string[] = existing.metadata?.constellation_ids ?? [];
+    const updated = ids.filter((id: string) => id !== constellationId);
+
+    await supermemoryRequest(`/v3/documents/${existing.id}`, "PATCH", {
+      metadata: {
+        doc_key: key,
+        constellation_ids: updated,
+      },
+    });
+    return `untagged:${key}`;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[supermemory] removeDocumentFromConstellation failed:", msg);
+    return `error:${msg}`;
+  }
+}
+
+/**
  * RAG search scoped to a single paper. Returns a synthesized answer string.
  */
 export async function ragSearchPerPaper(

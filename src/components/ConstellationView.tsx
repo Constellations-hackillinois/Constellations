@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
-import { storeDocument, ragSearchPerPaper, ragSearchGlobal } from "@/app/actions/supermemory";
+import { storeDocument, ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
 import {
   fetchConstellations as fetchConstellationsDB,
   upsertConstellation,
@@ -1044,6 +1044,96 @@ export default function ConstellationView({
 
   expandNodeRef.current = expandNode;
 
+  const deleteNodeCascade = useCallback(
+    (targetId: number) => {
+      const s = stateRef.current;
+      const target = s.nodes.get(targetId);
+      if (!target || target.depth === 0) return;
+
+      // Collect the full subtree (target + all descendants)
+      const toDelete: number[] = [];
+      const stack = [targetId];
+      while (stack.length) {
+        const nid = stack.pop()!;
+        toDelete.push(nid);
+        const n = s.nodes.get(nid);
+        if (n) stack.push(...n.children);
+      }
+
+      // Close chat if it's open on a node we're about to delete
+      if (s.chatNodeId !== null && toDelete.includes(s.chatNodeId)) {
+        hideChat();
+      }
+
+      // Phase 1: Animate collapse (nodes shrink, edges retract)
+      const animDuration = 500;
+      const parentNode = target.parentId !== null ? s.nodes.get(target.parentId) : null;
+
+      for (const nid of toDelete) {
+        const n = s.nodes.get(nid);
+        if (n?.el) {
+          n.el.classList.add(styles.collapsing);
+        }
+      }
+
+      // Add reverse edge animations (retract toward parent)
+      for (const nid of toDelete) {
+        const n = s.nodes.get(nid);
+        if (n && n.parentId !== null) {
+          s.edgeAnims = s.edgeAnims.filter(
+            (a) => !(a.fromId === n.parentId && a.toId === n.id)
+          );
+        }
+      }
+
+      // Phase 2: After animation, remove from data structures
+      setTimeout(() => {
+        const paperUrls: string[] = [];
+
+        for (const nid of toDelete) {
+          const n = s.nodes.get(nid);
+          if (n) {
+            if (n.paperUrl) paperUrls.push(n.paperUrl);
+            if (n.el) {
+              n.el.remove();
+              n.el = null;
+            }
+            s.nodes.delete(nid);
+          }
+        }
+
+        // Remove target from parent's children array
+        if (parentNode) {
+          parentNode.children = parentNode.children.filter((cid) => cid !== targetId);
+        }
+
+        // Clean up any remaining edge anims referencing deleted nodes
+        s.edgeAnims = s.edgeAnims.filter(
+          (a) => !toDelete.includes(a.fromId) && !toDelete.includes(a.toId)
+        );
+
+        // Clean up highlights
+        for (const nid of toDelete) {
+          s.highlights.delete(nid);
+        }
+
+        // Persist to Supabase
+        flushGraph();
+
+        // Clean up Supermemory in background
+        const cid = currentIdRef.current;
+        if (cid) {
+          for (const url of paperUrls) {
+            removeDocumentFromConstellation(url, cid).catch((err) =>
+              console.error("[supermemory] cleanup failed:", err)
+            );
+          }
+        }
+      }, animDuration);
+    },
+    [hideChat, flushGraph]
+  );
+
   // ─── Main effect: setup everything ───
   useEffect(() => {
     const s = stateRef.current;
@@ -1630,6 +1720,20 @@ export default function ConstellationView({
           >
             <Plus size={13} aria-hidden="true" />
             Expand
+          </button>
+          <button
+            className={styles.chatDeleteBtn}
+            title="Delete this node and its branches"
+            onClick={() => {
+              const id = stateRef.current.chatNodeId;
+              if (id !== null) {
+                const node = stateRef.current.nodes.get(id);
+                if (node && node.depth > 0) deleteNodeCascade(id);
+              }
+            }}
+          >
+            <Trash2 size={13} aria-hidden="true" />
+            Delete
           </button>
         </div>
         <div ref={chatMessagesRef} className={styles.chatMessages} />
