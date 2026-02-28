@@ -1773,7 +1773,9 @@ export default function ConstellationView({
               <Search size={16} />
             </span>
             <span className={styles.globalSearchCollapsedLabel}>Ask the knowledge graph...</span>
-            <span className={styles.globalSearchShortcut}>⌘K</span>
+            <span className={styles.globalSearchAction} aria-hidden="true">
+              <SendHorizontal size={14} />
+            </span>
           </button>
         )}
       </div>

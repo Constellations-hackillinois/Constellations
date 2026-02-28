@@ -896,8 +896,7 @@
   cursor: pointer;
 }
 
-.globalSearchCollapsed:hover,
-.globalSearchBar:focus-within {
+.globalSearchCollapsed:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 216, 102, 0.15);
   box-shadow:
@@ -923,6 +922,7 @@
 }
 
 .globalSearchCollapsedLabel {
+  flex: 1;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.45);
   text-align: left;
