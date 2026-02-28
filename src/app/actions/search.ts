@@ -14,6 +14,10 @@ export interface PickedPaper {
     url: string;
 }
 
+function normalizeArxivUrl(url: string): string {
+    return url.replace(/arxiv\.org\/abs\//g, "arxiv.org/pdf/");
+}
+
 async function rewriteQuery(userQuery: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
@@ -78,7 +82,7 @@ export async function searchTopic(query: string): Promise<SearchResult[]> {
 
     return response.results.map((r) => ({
         title: r.title ?? "Untitled",
-        url: r.url,
+        url: normalizeArxivUrl(r.url),
         text: r.highlights?.join(" ") ?? "",
     }));
 }
@@ -231,7 +235,7 @@ Generate a single, targeted web search query to find the most relevant related a
 
     const results: SearchResult[] = searchResp.results.map((r) => ({
         title: r.title ?? "Untitled",
-        url: r.url,
+        url: normalizeArxivUrl(r.url),
         text: r.highlights?.join(" ") ?? "",
     }));
 
