@@ -54,6 +54,166 @@
   pointer-events: none;
 }
 
+/* ─── Sidebar toggle ─── */
+.sidebarToggle {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(10, 14, 26, 0.8);
+  color: #e0e0e0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.sidebarToggle:hover {
+  background: rgba(255, 216, 102, 0.15);
+  border-color: rgba(255, 216, 102, 0.4);
+}
+
+/* ─── Sidebar panel ─── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100%;
+  z-index: 15;
+  background: rgba(10, 14, 26, 0.92);
+  border-right: 1px solid rgba(255, 216, 102, 0.15);
+  backdrop-filter: blur(14px);
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  pointer-events: all;
+}
+
+.sidebarOpen {
+  transform: translateX(0);
+}
+
+.sidebarHeader {
+  padding: 20px 16px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd866;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.sidebarList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.sidebarList::-webkit-scrollbar { width: 4px; }
+.sidebarList::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 2px; }
+
+.sidebarEmpty {
+  padding: 24px 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+}
+
+.sidebarItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 16px;
+  min-height: 38px;
+  transition: background 0.15s;
+}
+
+.sidebarItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sidebarItemActive {
+  background: rgba(255, 216, 102, 0.08);
+  border-left: 2px solid #ffd866;
+  padding-left: 14px;
+}
+
+.sidebarItemName {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #d0d0d0;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  padding: 8px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: inherit;
+}
+
+.sidebarItemName:hover {
+  color: #ffffff;
+}
+
+.sidebarItemActions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.sidebarItem:hover .sidebarItemActions {
+  opacity: 1;
+}
+
+.sidebarAction {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.sidebarAction:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebarRenameForm {
+  flex: 1;
+  display: flex;
+}
+
+.sidebarRenameInput {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 216, 102, 0.4);
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 13px;
+  padding: 4px 8px;
+  outline: none;
+  font-family: inherit;
+}
+
 /* ─── Star nodes ─── */
 .starNode {
   position: absolute;
