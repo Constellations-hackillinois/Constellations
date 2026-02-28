@@ -76,13 +76,13 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [paperData, setPaperData] = useState<{ title: string; url: string } | null>(null);
   const [starFading, setStarFading] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  const [debugMode, setDebugMode] = useState(true);
   const [constellationId, setConstellationId] = useState<string | undefined>();
   const landingGlowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
-    setDebugMode(new URLSearchParams(window.location.search).get("debug") === "true");
+    setDebugMode(new URLSearchParams(window.location.search).get("debug") !== "false");
 
     function handleGlow(e: MouseEvent) {
       if (landingGlowRef.current) {
@@ -116,7 +116,7 @@ export default function Home() {
         const params = new URLSearchParams();
         params.set("topic", query);
         params.set("id", id);
-        if (debugMode) params.set("debug", "true");
+        if (!debugMode) params.set("debug", "false");
         if (data?.pickedPaper) {
           params.set("paperTitle", data.pickedPaper.title);
           params.set("paperUrl", data.pickedPaper.url);
