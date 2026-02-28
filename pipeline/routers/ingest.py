@@ -10,7 +10,6 @@ from config import SUPABASE_URL, SUPABASE_ANON_KEY
 from utils.arxiv import extract_arxiv_id
 from stages.download import download_pdf
 from stages.markdown import convert_pdf_to_markdown
-from stages.densify import densify_markdown
 from stages.store import save_results, update_paper_status
 
 logger = logging.getLogger(__name__)
@@ -42,25 +41,15 @@ async def _run_pipeline(
         await update_paper_status(arxiv_id, "converting")
         md = await convert_pdf_to_markdown(dl_result["pdf_bytes"])
 
-        # Stage 3: Densify markdown via Gemini
-        logger.info("[pipeline] Stage 3: Densifying markdown for %s", arxiv_id)
-        await update_paper_status(arxiv_id, "densifying")
-        try:
-            densified = await densify_markdown(md)
-            logger.info("[pipeline] Densification complete for %s: %d -> %d chars", arxiv_id, len(md), len(densified))
-        except Exception as e:
-            logger.warning("[pipeline] Densification failed for %s, using raw markdown: %s", arxiv_id, e)
-            densified = md  # Graceful degradation
-
-        # Stage 4: Store results
-        logger.info("[pipeline] Stage 4: Storing results for %s", arxiv_id)
-        word_count = len(densified.split())
+        # Stage 3: Store results
+        logger.info("[pipeline] Stage 3: Storing results for %s", arxiv_id)
+        word_count = len(md.split())
         await save_results(
             arxiv_id=arxiv_id,
             paper_title=paper_title,
             constellation_id=constellation_id,
             markdown=md,
-            densified_markdown=densified,
+            densified_markdown=md,
             word_count=word_count,
         )
         logger.info("[pipeline] Pipeline complete for %s", arxiv_id)
@@ -100,7 +89,7 @@ async def ingest(req: IngestRequest, background_tasks: BackgroundTasks):
                 _tag_constellation, arxiv_id, req.constellation_id
             )
             return {"status": "already_complete", "arxiv_id": arxiv_id}
-        if current_status in ("downloading", "converting", "densifying"):
+        if current_status in ("downloading", "converting"):
             return {"status": "in_progress", "arxiv_id": arxiv_id}
         # If failed or pending, retry
         logger.info("[ingest] Retrying %s (was %s)", arxiv_id, current_status)

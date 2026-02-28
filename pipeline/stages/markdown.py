@@ -51,7 +51,7 @@ async def _convert_chunk(client: genai.Client, chunk_bytes: bytes, chunk_index: 
         mime_type="application/pdf",
     )
 
-    response = client.models.generate_content(
+    response = await client.aio.models.generate_content(
         model="gemini-3-flash-preview",
         contents=[CONVERT_PROMPT, pdf_part],
     )
@@ -83,7 +83,7 @@ async def convert_pdf_to_markdown(pdf_bytes: bytes) -> str:
     if len(chunks) == 1:
         results = [await _convert_chunk(client, chunks[0], 0)]
     else:
-        semaphore = asyncio.Semaphore(4)
+        semaphore = asyncio.Semaphore(8)
 
         async def limited_convert(idx: int, chunk: bytes) -> str:
             async with semaphore:
