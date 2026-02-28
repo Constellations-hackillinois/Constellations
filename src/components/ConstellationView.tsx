@@ -635,11 +635,11 @@ export default function ConstellationView({
         messages.map((message) =>
           message.id === assistantId
             ? {
-                ...message,
-                text: answer,
-                sourceArxivIds,
-                status: "complete",
-              }
+              ...message,
+              text: answer,
+              sourceArxivIds,
+              status: "complete",
+            }
             : message
         )
       );
@@ -652,10 +652,10 @@ export default function ConstellationView({
         messages.map((message) =>
           message.id === assistantId
             ? {
-                ...message,
-                text: "Something went wrong. Please try again.",
-                status: "error",
-              }
+              ...message,
+              text: "Something went wrong. Please try again.",
+              status: "error",
+            }
             : message
         )
       );
@@ -745,7 +745,7 @@ export default function ConstellationView({
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        expandNodeRef.current(node.id);
+        showChat(node.id);
       });
 
       el.addEventListener("mouseenter", () => {
@@ -843,7 +843,7 @@ export default function ConstellationView({
 
   createNodeRef.current = createNode;
 
-  const expandNodeRef = useRef<(id: number) => void>(() => {});
+  const expandNodeRef = useRef<(id: number) => void>(() => { });
 
   const expandNode = useCallback(
     async (id: number) => {
@@ -1334,9 +1334,8 @@ export default function ConstellationView({
                   globalSearchMessages.map((message) => (
                     <div
                       key={message.id}
-                      className={`${styles.globalSearchMessage} ${
-                        message.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi
-                      } ${message.status === "error" ? styles.globalSearchMessageError : ""}`}
+                      className={`${styles.globalSearchMessage} ${message.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi
+                        } ${message.status === "error" ? styles.globalSearchMessageError : ""}`}
                     >
                       <div className={styles.globalSearchBubble}>{message.text}</div>
                       {message.role === "ai" && message.sourceArxivIds && message.sourceArxivIds.length > 0 && (
@@ -1482,8 +1481,21 @@ export default function ConstellationView({
       <div ref={nodesRef} className={styles.nodesContainer} />
 
       <div ref={chatRef} className={styles.chatWindow}>
-        <div ref={chatHeaderRef} className={styles.chatHeader}>
-          Node
+        <div className={styles.chatHeaderRow}>
+          <div ref={chatHeaderRef} className={styles.chatHeader}>
+            Node
+          </div>
+          <button
+            className={styles.chatExpandBtn}
+            title="Find related papers"
+            onClick={() => {
+              const id = stateRef.current.chatNodeId;
+              if (id !== null) expandNodeRef.current(id);
+            }}
+          >
+            <Plus size={13} aria-hidden="true" />
+            Expand
+          </button>
         </div>
         <div ref={chatMessagesRef} className={styles.chatMessages} />
         <div className={styles.chatInputArea}>
@@ -1514,7 +1526,7 @@ export default function ConstellationView({
       </div>
 
       <div className={styles.onboardingHint}>
-        Click a node to expand &middot; Hover for details &middot; Drag to pan &middot; Scroll to zoom
+        Click a node to chat &middot; Hover &amp; press Expand &middot; Drag to pan &middot; Scroll to zoom
       </div>
     </>
   );
