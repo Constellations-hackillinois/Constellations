@@ -5,34 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { followUpSearch } from "@/app/actions/search";
 import styles from "./constellations.module.css";
 
-// ─── Word lists ───
-const ADJECTIVES = [
-  "Quantum", "Stellar", "Cosmic", "Neural", "Orbital", "Fractal", "Astral",
-  "Photon", "Nebula", "Plasma", "Crystal", "Binary", "Radiant", "Spectral",
-  "Primal", "Amber", "Lucid", "Mystic", "Silent", "Vivid",
-];
-const NOUNS = [
-  "Drift", "Echo", "Pulse", "Forge", "Spire", "Bloom", "Nexus",
-  "Shard", "Veil", "Gate", "Seed", "Wave", "Core", "Flux",
-  "Loom", "Arc", "Dusk", "Glyph", "Haven", "Rift",
-];
-const AI_TEMPLATES = [
-  "The {adj} {noun} resonates with hidden frequencies...",
-  "Detecting patterns in the {adj} spectrum — {noun} signatures confirmed.",
-  "This region shows traces of {adj} activity. The {noun} is unusually active.",
-  "Fascinating. The {noun} here exhibits {adj} properties I haven't seen before.",
-  "My sensors indicate a {adj} anomaly. Possibly related to the {noun} field.",
-  "The data suggests a {adj} convergence near the {noun} threshold.",
-  "Interesting question. The {adj} layer seems to interact with the {noun} matrix.",
-  "Analysis complete: {adj} harmonics are amplifying the {noun} signal.",
-];
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function generateLabel(): string {
-  return pick(ADJECTIVES) + " " + pick(NOUNS);
-}
 
 // ─── Types ───
 interface ConstellationNode {
@@ -236,9 +208,12 @@ function ConstellationsInner() {
 
       // Spawn daughter node if a paper was found
       if (pickedPaper) {
-        const toCenterAngle = Math.atan2(-node.y, -node.x);
-        const awayAngle = toCenterAngle + Math.PI;
-        const angle = awayAngle + (Math.random() - 0.5) * 1.2;
+        // Place on global orbit ring, in a narrow cone pointing outward
+        const isOrigin = node.depth === 0;
+        const parentAngle = Math.atan2(node.y, node.x);
+        const angle = isOrigin
+          ? Math.random() * Math.PI * 2
+          : parentAngle + (Math.random() - 0.5) * (Math.PI * 0.22);
 
         const child = createNodeRef.current(
           pickedPaper.title,
@@ -319,13 +294,7 @@ function ConstellationsInner() {
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        const n = s.nodes.get(node.id);
-        if (!n) return;
-        if (n.children.length > 0) {
-          highlightSubtree(node.id);
-        } else {
-          expandNode(node.id);
-        }
+        showChat(node.id);
       });
 
       el.addEventListener("mouseenter", () => {
@@ -343,7 +312,7 @@ function ConstellationsInner() {
       node.el = el;
       updateNodePosition(node);
     },
-    [highlightSubtree, showChat, hideChat, updateNodePosition]
+    [showChat, hideChat, updateNodePosition]
   );
 
   const createNode = useCallback(
@@ -384,63 +353,8 @@ function ConstellationsInner() {
     [createNodeElement]
   );
 
-  // expandNode needs to be hoisted for the click handler closure
-  // We use a ref to break the circular dependency
-  const expandNodeRef = useRef<(id: number) => void>(() => { });
-
   // Keep createNodeRef up to date
   createNodeRef.current = createNode;
-
-  const expandNode = useCallback(
-    (id: number) => {
-      const s = stateRef.current;
-      const parent = s.nodes.get(id);
-      if (!parent) return;
-
-      const numChildren = 3 + Math.floor(Math.random() * 3);
-      const isOrigin = parent.depth === 0;
-
-      // Parent's angle from the constellation center
-      const parentAngle = Math.atan2(parent.y, parent.x);
-
-      for (let i = 0; i < numChildren; i++) {
-        let angle: number;
-        if (isOrigin) {
-          // Origin: distribute evenly around full circle
-          angle = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-        } else {
-          // Non-origin: narrow cone (~40°) centered on parent's radial direction
-          // so children appear on the next orbit ring, arcing outward
-          const coneSpread = Math.PI * 0.22; // ~40° total
-          const t = numChildren === 1 ? 0.5 : i / (numChildren - 1);
-          angle = parentAngle - coneSpread / 2 + t * coneSpread + (Math.random() - 0.5) * 0.08;
-        }
-        const child = createNode(
-          generateLabel(),
-          parent.depth + 1,
-          id,
-          angle
-        );
-
-        child.el?.classList.add(styles.igniting);
-        const el = child.el;
-        if (el) setTimeout(() => el.classList.remove(styles.igniting), 600);
-
-        parent.children.push(child.id);
-
-        s.edgeAnims.push({
-          fromId: id,
-          toId: child.id,
-          progress: 0,
-          startTime: performance.now() + i * 80,
-        });
-      }
-    },
-    [createNode]
-  );
-
-  // Keep the ref up to date
-  expandNodeRef.current = expandNode;
 
   // ─── Main effect: setup everything ───
   useEffect(() => {
