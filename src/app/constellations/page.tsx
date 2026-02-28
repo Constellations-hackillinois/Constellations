@@ -370,13 +370,11 @@ function ConstellationsInner() {
         paperUrl: null,
       };
 
-      if (depth > 0 && parentId !== null) {
-        const parent = s.nodes.get(parentId);
-        if (parent) {
-          const radius = BASE_RADIUS + (depth - 1) * RING_SPACING;
-          node.x = parent.x + Math.cos(angle) * radius;
-          node.y = parent.y + Math.sin(angle) * radius;
-        }
+      if (depth > 0) {
+        // Place on a global orbit circle centered at origin (0,0)
+        const orbitRadius = BASE_RADIUS + (depth - 1) * RING_SPACING;
+        node.x = Math.cos(angle) * orbitRadius;
+        node.y = Math.sin(angle) * orbitRadius;
       }
 
       s.nodes.set(id, node);
@@ -400,14 +398,23 @@ function ConstellationsInner() {
       if (!parent) return;
 
       const numChildren = 3 + Math.floor(Math.random() * 3);
-      const toCenterAngle = Math.atan2(-parent.y, -parent.x);
-      const arcSpread = Math.PI * 1.2;
-      const awayAngle = toCenterAngle + Math.PI;
-      const startAngle = awayAngle - arcSpread / 2;
+      const isOrigin = parent.depth === 0;
+
+      // Parent's angle from the constellation center
+      const parentAngle = Math.atan2(parent.y, parent.x);
 
       for (let i = 0; i < numChildren; i++) {
-        const t = numChildren === 1 ? 0.5 : i / (numChildren - 1);
-        const angle = startAngle + t * arcSpread + (Math.random() - 0.5) * 0.2;
+        let angle: number;
+        if (isOrigin) {
+          // Origin: distribute evenly around full circle
+          angle = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+        } else {
+          // Non-origin: narrow cone (~40°) centered on parent's radial direction
+          // so children appear on the next orbit ring, arcing outward
+          const coneSpread = Math.PI * 0.22; // ~40° total
+          const t = numChildren === 1 ? 0.5 : i / (numChildren - 1);
+          angle = parentAngle - coneSpread / 2 + t * coneSpread + (Math.random() - 0.5) * 0.08;
+        }
         const child = createNode(
           generateLabel(),
           parent.depth + 1,
