@@ -76,6 +76,7 @@ export default function Home() {
   const [paperData, setPaperData] = useState<{ title: string; url: string } | null>(null);
   const [starFading, setStarFading] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [constellationId, setConstellationId] = useState<string | undefined>();
   const landingGlowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,6 +95,8 @@ export default function Home() {
 
   function handleSubmit() {
     if (!query.trim() || phase !== "landing") return;
+    const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    setConstellationId(id);
     setPhase("collapsing");
 
     const search = debugMode
@@ -111,6 +114,7 @@ export default function Home() {
       setTimeout(() => {
         const params = new URLSearchParams();
         params.set("topic", query);
+        params.set("id", id);
         if (debugMode) params.set("debug", "true");
         if (data?.pickedPaper) {
           params.set("paperTitle", data.pickedPaper.title);
@@ -134,6 +138,7 @@ export default function Home() {
             paperTitle={paperData?.title}
             paperUrl={paperData?.url}
             debugMode={debugMode}
+            constellationId={constellationId}
           />
         </div>
       )}

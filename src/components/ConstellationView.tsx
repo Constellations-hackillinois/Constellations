@@ -1,10 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import {
+  BookOpen,
+  Compass,
+  FileText,
+  House,
+  Menu,
+  Pencil,
+  Search,
+  SendHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
+import { storeDocument, ragSearchPerPaper, ragSearchGlobal } from "@/app/actions/supermemory";
+import { extractArxivId } from "@/lib/arxiv";
+import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
 
 // ─── Types ───
+type ChatMessageIcon = "bookOpen" | "search";
+
 interface ConstellationNode {
   id: number;
   label: string;
@@ -14,10 +31,11 @@ interface ConstellationNode {
   x: number;
   y: number;
   children: number[];
-  messages: { role: "user" | "ai"; text: string }[];
+  messages: { role: "user" | "ai"; text: string; icon?: ChatMessageIcon }[];
   el: HTMLDivElement | null;
   paperTitle: string | null;
   paperUrl: string | null;
+  expanding: boolean;
 }
 
 interface Star {
@@ -124,6 +142,7 @@ interface ConstellationViewProps {
   paperTitle?: string;
   paperUrl?: string;
   debugMode?: boolean;
+  constellationId?: string;
 }
 
 export default function ConstellationView({
@@ -131,17 +150,27 @@ export default function ConstellationView({
   paperTitle,
   paperUrl,
   debugMode = false,
+  constellationId: constellationIdProp,
 }: ConstellationViewProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [currentId, setCurrentId] = useState("");
+  const [ragMode, setRagMode] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchAnswer, setGlobalSearchAnswer] = useState("");
+  const [globalSearchSources, setGlobalSearchSources] = useState(0);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+
+  const currentIdRef = useRef("");
 
   useEffect(() => {
     const saved = loadConstellations();
-    const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    const id = constellationIdProp || (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
     setCurrentId(id);
+    currentIdRef.current = id;
 
     if (topic) {
       const entry: SavedConstellation = {
@@ -194,6 +223,7 @@ export default function ConstellationView({
   const chatRef = useRef<HTMLDivElement>(null);
   const chatHeaderRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRootRef = useRef<Root | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -258,37 +288,56 @@ export default function ConstellationView({
   const renderMessages = useCallback((node: ConstellationNode) => {
     const container = chatMessagesRef.current;
     if (!container) return;
-    container.innerHTML = "";
-    if (node.messages.length === 0) {
-      const hint = document.createElement("div");
-      hint.className = `${styles.chatMsg} ${styles.ai}`;
-      hint.textContent = "Greetings, traveler. Ask me about " + node.label + ".";
-      container.appendChild(hint);
-    } else {
-      node.messages.forEach((m) => {
-        const div = document.createElement("div");
-        div.className = `${styles.chatMsg} ${m.role === "user" ? styles.user : styles.ai}`;
-        div.textContent = m.text;
-        container.appendChild(div);
-      });
+    if (!chatMessagesRootRef.current) {
+      chatMessagesRootRef.current = createRoot(container);
     }
 
-    if (node.paperUrl) {
-      const paperDiv = document.createElement("div");
-      paperDiv.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);";
-      const link = document.createElement("a");
-      link.href = node.paperUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.style.cssText = "display:block;font-size:11px;color:#ffd866;text-decoration:none;word-break:break-all;";
-      link.textContent = "\u{1F4C4} " + (node.paperTitle ?? "View Paper");
-      link.addEventListener("mouseenter", () => { link.style.textDecoration = "underline"; });
-      link.addEventListener("mouseleave", () => { link.style.textDecoration = "none"; });
-      paperDiv.appendChild(link);
-      container.appendChild(paperDiv);
-    }
+    chatMessagesRootRef.current.render(
+      <>
+        {node.messages.length === 0 ? (
+          <div className={`${styles.chatMsg} ${styles.ai}`}>
+            Greetings, traveler. Ask me about {node.label}.
+          </div>
+        ) : (
+          node.messages.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`${styles.chatMsg} ${message.role === "user" ? styles.user : styles.ai}`}
+            >
+              {message.icon ? (
+                <span className={styles.chatMsgContent}>
+                  <span className={styles.chatMsgIcon} aria-hidden="true">
+                    {message.icon === "bookOpen" ? <BookOpen size={13} /> : <Search size={13} />}
+                  </span>
+                  <span>{message.text}</span>
+                </span>
+              ) : (
+                message.text
+              )}
+            </div>
+          ))
+        )}
+        {node.paperUrl && (
+          <div className={styles.chatPaperMeta}>
+            <a
+              href={node.paperUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.chatPaperLink}
+            >
+              <FileText size={12} aria-hidden="true" />
+              <span>{node.paperTitle ?? "View Paper"}</span>
+            </a>
+          </div>
+        )}
+      </>
+    );
 
-    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      if (chatMessagesRef.current === container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
   }, []);
 
   const hideChat = useCallback(() => {
@@ -337,6 +386,9 @@ export default function ConstellationView({
     s.panAnimDuration = 1200;
   }, []);
 
+  const ragModeRef = useRef(false);
+  ragModeRef.current = ragMode;
+
   const createNodeRef = useRef<(label: string, depth: number, parentId: number | null, angle: number) => ConstellationNode>(null!);
 
   const sendMessage = useCallback(async () => {
@@ -351,9 +403,26 @@ export default function ConstellationView({
     if (input) input.value = "";
     renderMessages(node);
 
-    node.messages.push({ role: "ai", text: "\u{1F50D} Searching for related papers..." });
-    renderMessages(node);
     const parentNodeId = node.id;
+
+    // RAG mode: ask about this paper's content instead of finding related papers
+    if (ragModeRef.current && node.paperUrl) {
+      node.messages.push({ role: "ai", text: "Searching paper content...", icon: "bookOpen" });
+      renderMessages(node);
+      try {
+        const answer = await ragSearchPerPaper(text, node.paperUrl, node.paperTitle ?? node.label, currentIdRef.current);
+        node.messages[node.messages.length - 1] = { role: "ai", text: answer };
+        if (s.chatNodeId === parentNodeId) renderMessages(node);
+      } catch (err) {
+        console.error("[constellation] ragSearchPerPaper failed:", err);
+        node.messages[node.messages.length - 1] = { role: "ai", text: "Something went wrong. Please try again." };
+        if (s.chatNodeId === parentNodeId) renderMessages(node);
+      }
+      return;
+    }
+
+    node.messages.push({ role: "ai", text: "Searching for related papers...", icon: "search" });
+    renderMessages(node);
 
     try {
       let pickedPaper: { title: string; url: string } | null;
@@ -396,6 +465,7 @@ export default function ConstellationView({
         );
         child.paperTitle = pickedPaper.title;
         child.paperUrl = pickedPaper.url;
+        if (pickedPaper.url) storeDocument(pickedPaper.url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
 
         child.el?.classList.add(styles.igniting);
         if (child.el) child.el.style.setProperty("--ignition-delay", "420ms");
@@ -453,6 +523,47 @@ export default function ConstellationView({
     }
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
+
+  const highlightNodesByArxivIds = useCallback((ids: string[]) => {
+    const s = stateRef.current;
+    const now = performance.now();
+    const idSet = new Set(ids);
+    s.nodes.forEach((node) => {
+      if (!node.paperUrl) return;
+      const key = extractArxivId(node.paperUrl) ?? node.paperUrl;
+      if (idSet.has(key)) {
+        s.highlights.set(node.id, { startTime: now });
+        if (node.el) {
+          node.el.classList.remove(styles.highlighting);
+          void node.el.offsetWidth;
+          node.el.classList.add(styles.highlighting);
+          const el = node.el;
+          setTimeout(() => el.classList.remove(styles.highlighting), 1000);
+        }
+      }
+    });
+    setTimeout(() => s.highlights.clear(), 1000);
+  }, []);
+
+  const handleGlobalSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    setGlobalSearchLoading(true);
+    setGlobalSearchAnswer("");
+    setGlobalSearchSources(0);
+    try {
+      const { answer, sourceArxivIds } = await ragSearchGlobal(query, currentIdRef.current);
+      setGlobalSearchAnswer(answer);
+      setGlobalSearchSources(sourceArxivIds.length);
+      if (sourceArxivIds.length > 0) {
+        highlightNodesByArxivIds(sourceArxivIds);
+      }
+    } catch (err) {
+      console.error("[constellation] globalSearch failed:", err);
+      setGlobalSearchAnswer("Something went wrong. Please try again.");
+    } finally {
+      setGlobalSearchLoading(false);
+    }
+  }, [highlightNodesByArxivIds]);
 
   const createNodeElement = useCallback(
     (node: ConstellationNode) => {
@@ -523,6 +634,7 @@ export default function ConstellationView({
         el: null,
         paperTitle: null,
         paperUrl: null,
+        expanding: false,
       };
 
       if (depth > 0) {
@@ -583,11 +695,12 @@ export default function ConstellationView({
     async (id: number) => {
       const s = stateRef.current;
       const parent = s.nodes.get(id);
-      if (!parent || parent.children.length > 0) {
+      if (!parent || parent.children.length > 0 || parent.expanding) {
         if (parent && parent.children.length > 0) highlightSubtree(id);
         return;
       }
 
+      parent.expanding = true;
       const pTitle = parent.paperTitle ?? parent.label;
       const pUrl = parent.paperUrl ?? "";
 
@@ -633,6 +746,10 @@ export default function ConstellationView({
           );
           child.paperTitle = papers[i].title;
           child.paperUrl = papers[i].url;
+          if (papers[i].url) {
+            console.log("[client] calling storeDocument:", papers[i].url, currentIdRef.current);
+            storeDocument(papers[i].url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+          }
 
           // Staged ignition: child materializes as beam approaches
           const ignitionDelay = i * 150 + 420;
@@ -733,7 +850,8 @@ export default function ConstellationView({
         (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
         (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
         (e.target as HTMLElement).closest(`.${styles.sidebarToggle}`) ||
-        (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`)
+        (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`) ||
+        (e.target as HTMLElement).closest(`.${styles.globalSearchContainer}`)
       )
         return;
       s.panAnimating = false;
@@ -955,7 +1073,10 @@ export default function ConstellationView({
     const originLabel = paperTitle || topic || "Origin";
     const originNode = createNode(originLabel, 0, null, 0);
     if (paperTitle) originNode.paperTitle = paperTitle;
-    if (paperUrl) originNode.paperUrl = paperUrl;
+    if (paperUrl) {
+      originNode.paperUrl = paperUrl;
+      storeDocument(paperUrl, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+    }
     s.animFrameId = requestAnimationFrame(frame);
 
     return () => {
@@ -968,6 +1089,8 @@ export default function ConstellationView({
       document.removeEventListener("wheel", handleWheel);
       chat.removeEventListener("mouseenter", chatEnter);
       chat.removeEventListener("mouseleave", chatLeave);
+      chatMessagesRootRef.current?.unmount();
+      chatMessagesRootRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -982,7 +1105,7 @@ export default function ConstellationView({
         title="Back to search"
         style={debugMode ? { right: 120 } : undefined}
       >
-        &#8962;
+        <House size={16} aria-hidden="true" />
       </a>
 
       <button
@@ -1001,12 +1124,56 @@ export default function ConstellationView({
         </svg>
       </button>
 
+      {/* ─── Global RAG search ─── */}
+      <div className={styles.globalSearchContainer} style={debugMode ? { right: 120 + 44 } : undefined}>
+        <button
+          className={styles.globalSearchToggle}
+          onClick={() => setGlobalSearchOpen((o) => !o)}
+          title="Search across all papers"
+        >
+          <Search size={16} aria-hidden="true" />
+        </button>
+        {globalSearchOpen && (
+          <div className={styles.globalSearchPanel}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleGlobalSearch(globalSearchQuery);
+              }}
+            >
+              <input
+                className={styles.globalSearchInput}
+                type="text"
+                placeholder="Ask across all papers..."
+                autoComplete="off"
+                autoFocus
+                value={globalSearchQuery}
+                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              />
+            </form>
+            {globalSearchLoading && (
+              <div className={styles.globalSearchAnswer}>Searching...</div>
+            )}
+            {globalSearchAnswer && !globalSearchLoading && (
+              <div className={styles.globalSearchResults}>
+                <div className={styles.globalSearchAnswer}>{globalSearchAnswer}</div>
+                {globalSearchSources > 0 && (
+                  <div className={styles.globalSearchSources}>
+                    Found in {globalSearchSources} paper{globalSearchSources !== 1 ? "s" : ""}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <button
         className={styles.sidebarToggle}
         onClick={() => setSidebarOpen((o) => !o)}
         title="Toggle constellation list"
       >
-        {sidebarOpen ? "\u2715" : "\u2630"}
+        {sidebarOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
       </button>
       <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}>
         <div className={styles.sidebarHeader}>Constellations</div>
@@ -1059,7 +1226,7 @@ export default function ConstellationView({
                       setRenameValue(c.name);
                     }}
                   >
-                    &#9998;
+                    <Pencil size={14} aria-hidden="true" />
                   </button>
                   <button
                     className={styles.sidebarAction}
@@ -1069,7 +1236,7 @@ export default function ConstellationView({
                       handleDelete(c.id);
                     }}
                   >
-                    &#128465;
+                    <Trash2 size={14} aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -1089,11 +1256,18 @@ export default function ConstellationView({
         </div>
         <div ref={chatMessagesRef} className={styles.chatMessages} />
         <div className={styles.chatInputArea}>
+          <button
+            className={`${styles.chatModeToggle} ${ragMode ? styles.chatModeActive : ""}`}
+            onClick={() => setRagMode((m) => !m)}
+            title={ragMode ? "Mode: Ask this paper (RAG)" : "Mode: Find related papers"}
+          >
+            {ragMode ? <BookOpen size={15} aria-hidden="true" /> : <Compass size={15} aria-hidden="true" />}
+          </button>
           <input
             ref={chatInputRef}
             className={styles.chatInput}
             type="text"
-            placeholder="Ask a follow-up question..."
+            placeholder={ragMode ? "Ask about this paper..." : "Ask a follow-up question..."}
             autoComplete="off"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -1103,7 +1277,7 @@ export default function ConstellationView({
             }}
           />
           <button className={styles.chatSend} onClick={sendMessage}>
-            &#9654;
+            <SendHorizontal size={15} aria-hidden="true" />
           </button>
         </div>
       </div>

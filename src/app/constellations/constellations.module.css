@@ -492,6 +492,21 @@
   line-height: 1.5;
 }
 
+.chatMsgContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chatMsgIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .user {
   background: var(--c-chat-user-bg);
   text-align: right;
@@ -501,6 +516,31 @@
 .ai {
   background: var(--c-chat-ai-bg);
   border-bottom-left-radius: 4px;
+}
+
+.chatPaperMeta {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chatPaperLink {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  color: #ffd866;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.chatPaperLink:hover {
+  text-decoration: underline;
+}
+
+.chatPaperLink svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .chatInputArea {

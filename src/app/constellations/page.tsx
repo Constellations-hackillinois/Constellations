@@ -1,14 +1,29 @@
 "use client";
 
 import { Suspense } from "react";
+import {
+  BookOpen,
+  Compass,
+  FileText,
+  House,
+  Menu,
+  Pencil,
+  Search,
+  SendHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
 import { storeDocument, ragSearchPerPaper, ragSearchGlobal } from "@/app/actions/supermemory";
 import { extractArxivId } from "@/lib/arxiv";
+import { createRoot, type Root } from "react-dom/client";
 import styles from "./constellations.module.css";
 import { useState, useRef, useEffect, useCallback } from "react";
 
 // ─── Types ───
+type ChatMessageIcon = "bookOpen" | "search";
+
 interface ConstellationNode {
   id: number;
   label: string;
@@ -18,10 +33,11 @@ interface ConstellationNode {
   x: number;
   y: number;
   children: number[];
-  messages: { role: "user" | "ai"; text: string }[];
+  messages: { role: "user" | "ai"; text: string; icon?: ChatMessageIcon }[];
   el: HTMLDivElement | null;
   paperTitle: string | null;
   paperUrl: string | null;
+  expanding: boolean;
 }
 
 interface Star {
@@ -131,10 +147,13 @@ function ConstellationsInner() {
   const currentId = searchParams.get("id") || "";
   const debugMode = searchParams.get("debug") === "true";
 
+  const currentIdRef = useRef(currentId);
+
   useEffect(() => {
     const saved = loadConstellations();
     if (currentTopic && !currentId) {
       const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+      currentIdRef.current = id;
       const entry: SavedConstellation = {
         id,
         name: currentTopic,
@@ -150,6 +169,7 @@ function ConstellationsInner() {
       params.set("id", id);
       window.history.replaceState(null, "", `?${params.toString()}`);
     } else {
+      currentIdRef.current = currentId;
       setConstellations(saved);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,6 +207,7 @@ function ConstellationsInner() {
   const chatRef = useRef<HTMLDivElement>(null);
   const chatHeaderRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRootRef = useRef<Root | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // All mutable state lives in refs to avoid re-renders
@@ -242,38 +263,56 @@ function ConstellationsInner() {
   const renderMessages = useCallback((node: ConstellationNode) => {
     const container = chatMessagesRef.current;
     if (!container) return;
-    container.innerHTML = "";
-    if (node.messages.length === 0) {
-      const hint = document.createElement("div");
-      hint.className = `${styles.chatMsg} ${styles.ai}`;
-      hint.textContent = "Greetings, traveler. Ask me about " + node.label + ".";
-      container.appendChild(hint);
-    } else {
-      node.messages.forEach((m) => {
-        const div = document.createElement("div");
-        div.className = `${styles.chatMsg} ${m.role === "user" ? styles.user : styles.ai}`;
-        div.textContent = m.text;
-        container.appendChild(div);
-      });
+    if (!chatMessagesRootRef.current) {
+      chatMessagesRootRef.current = createRoot(container);
     }
 
-    // Show paper link if this node has one
-    if (node.paperUrl) {
-      const paperDiv = document.createElement("div");
-      paperDiv.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);";
-      const link = document.createElement("a");
-      link.href = node.paperUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.style.cssText = "display:block;font-size:11px;color:#ffd866;text-decoration:none;word-break:break-all;";
-      link.textContent = "📄 " + (node.paperTitle ?? "View Paper");
-      link.addEventListener("mouseenter", () => { link.style.textDecoration = "underline"; });
-      link.addEventListener("mouseleave", () => { link.style.textDecoration = "none"; });
-      paperDiv.appendChild(link);
-      container.appendChild(paperDiv);
-    }
+    chatMessagesRootRef.current.render(
+      <>
+        {node.messages.length === 0 ? (
+          <div className={`${styles.chatMsg} ${styles.ai}`}>
+            Greetings, traveler. Ask me about {node.label}.
+          </div>
+        ) : (
+          node.messages.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`${styles.chatMsg} ${message.role === "user" ? styles.user : styles.ai}`}
+            >
+              {message.icon ? (
+                <span className={styles.chatMsgContent}>
+                  <span className={styles.chatMsgIcon} aria-hidden="true">
+                    {message.icon === "bookOpen" ? <BookOpen size={13} /> : <Search size={13} />}
+                  </span>
+                  <span>{message.text}</span>
+                </span>
+              ) : (
+                message.text
+              )}
+            </div>
+          ))
+        )}
+        {node.paperUrl && (
+          <div className={styles.chatPaperMeta}>
+            <a
+              href={node.paperUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.chatPaperLink}
+            >
+              <FileText size={12} aria-hidden="true" />
+              <span>{node.paperTitle ?? "View Paper"}</span>
+            </a>
+          </div>
+        )}
+      </>
+    );
 
-    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      if (chatMessagesRef.current === container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
   }, []);
 
   const hideChat = useCallback(() => {
@@ -332,10 +371,10 @@ function ConstellationsInner() {
 
     // RAG mode: ask about this paper's content instead of finding related papers
     if (ragModeRef.current && node.paperUrl) {
-      node.messages.push({ role: "ai", text: "📖 Searching paper content..." });
+      node.messages.push({ role: "ai", text: "Searching paper content...", icon: "bookOpen" });
       renderMessages(node);
       try {
-        const answer = await ragSearchPerPaper(text, node.paperUrl, node.paperTitle ?? node.label);
+        const answer = await ragSearchPerPaper(text, node.paperUrl, node.paperTitle ?? node.label, currentIdRef.current);
         node.messages[node.messages.length - 1] = { role: "ai", text: answer };
         if (s.chatNodeId === parentNodeId) renderMessages(node);
       } catch (err) {
@@ -347,7 +386,7 @@ function ConstellationsInner() {
     }
 
     // Show searching indicator
-    node.messages.push({ role: "ai", text: "🔍 Searching for related papers..." });
+    node.messages.push({ role: "ai", text: "Searching for related papers...", icon: "search" });
     renderMessages(node);
 
     try {
@@ -390,7 +429,7 @@ function ConstellationsInner() {
         );
         child.paperTitle = pickedPaper.title;
         child.paperUrl = pickedPaper.url;
-        if (pickedPaper.url) storeDocument(pickedPaper.url);
+        if (pickedPaper.url) storeDocument(pickedPaper.url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
 
         child.el?.classList.add(styles.igniting);
         const el = child.el;
@@ -465,7 +504,7 @@ function ConstellationsInner() {
     setGlobalSearchAnswer("");
     setGlobalSearchSources(0);
     try {
-      const { answer, sourceArxivIds } = await ragSearchGlobal(query);
+      const { answer, sourceArxivIds } = await ragSearchGlobal(query, currentIdRef.current);
       setGlobalSearchAnswer(answer);
       setGlobalSearchSources(sourceArxivIds.length);
       if (sourceArxivIds.length > 0) {
@@ -548,6 +587,7 @@ function ConstellationsInner() {
         el: null,
         paperTitle: null,
         paperUrl: null,
+        expanding: false,
       };
 
       if (depth > 0) {
@@ -574,12 +614,13 @@ function ConstellationsInner() {
     async (id: number) => {
       const s = stateRef.current;
       const parent = s.nodes.get(id);
-      if (!parent || parent.children.length > 0) {
+      if (!parent || parent.children.length > 0 || parent.expanding) {
         // Already expanded — highlight subtree instead
         if (parent && parent.children.length > 0) highlightSubtree(id);
         return;
       }
 
+      parent.expanding = true;
       const paperTitle = parent.paperTitle ?? parent.label;
       const paperUrl = parent.paperUrl ?? "";
 
@@ -622,7 +663,10 @@ function ConstellationsInner() {
           );
           child.paperTitle = papers[i].title;
           child.paperUrl = papers[i].url;
-          if (papers[i].url) storeDocument(papers[i].url);
+          if (papers[i].url) {
+            console.log("[client] calling storeDocument:", papers[i].url, currentIdRef.current);
+            storeDocument(papers[i].url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+          }
 
           child.el?.classList.add(styles.igniting);
           const el = child.el;
@@ -847,7 +891,7 @@ function ConstellationsInner() {
     if (pTitle) originNode.paperTitle = pTitle;
     if (pUrl) {
       originNode.paperUrl = pUrl;
-      storeDocument(pUrl);
+      storeDocument(pUrl, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
     }
     s.animFrameId = requestAnimationFrame(frame);
 
@@ -860,6 +904,8 @@ function ConstellationsInner() {
       document.removeEventListener("wheel", handleWheel);
       chat.removeEventListener("mouseenter", chatEnter);
       chat.removeEventListener("mouseleave", chatLeave);
+      chatMessagesRootRef.current?.unmount();
+      chatMessagesRootRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -876,7 +922,7 @@ function ConstellationsInner() {
         title="Back to search"
         style={debugMode ? { right: 120 } : undefined}
       >
-        &#8962;
+        <House size={16} aria-hidden="true" />
       </a>
 
       {/* ─── Global RAG search ─── */}
@@ -886,7 +932,7 @@ function ConstellationsInner() {
           onClick={() => setGlobalSearchOpen((o) => !o)}
           title="Search across all papers"
         >
-          &#128269;
+          <Search size={16} aria-hidden="true" />
         </button>
         {globalSearchOpen && (
           <div className={styles.globalSearchPanel}>
@@ -929,7 +975,7 @@ function ConstellationsInner() {
         onClick={() => setSidebarOpen((o) => !o)}
         title="Toggle constellation list"
       >
-        {sidebarOpen ? "\u2715" : "\u2630"}
+        {sidebarOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
       </button>
       <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}>
         <div className={styles.sidebarHeader}>Constellations</div>
@@ -982,7 +1028,7 @@ function ConstellationsInner() {
                       setRenameValue(c.name);
                     }}
                   >
-                    &#9998;
+                    <Pencil size={14} aria-hidden="true" />
                   </button>
                   <button
                     className={styles.sidebarAction}
@@ -992,7 +1038,7 @@ function ConstellationsInner() {
                       handleDelete(c.id);
                     }}
                   >
-                    &#128465;
+                    <Trash2 size={14} aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -1017,7 +1063,7 @@ function ConstellationsInner() {
             onClick={() => setRagMode((m) => !m)}
             title={ragMode ? "Mode: Ask this paper (RAG)" : "Mode: Find related papers"}
           >
-            {ragMode ? "📖" : "🧭"}
+            {ragMode ? <BookOpen size={15} aria-hidden="true" /> : <Compass size={15} aria-hidden="true" />}
           </button>
           <input
             ref={chatInputRef}
@@ -1033,7 +1079,7 @@ function ConstellationsInner() {
             }}
           />
           <button className={styles.chatSend} onClick={sendMessage}>
-            &#9654;
+            <SendHorizontal size={15} aria-hidden="true" />
           </button>
         </div>
       </div>

@@ -5,18 +5,22 @@ import { extractArxivId } from "@/lib/arxiv";
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai";
 
-async function supermemoryFetch(path: string, body: object) {
+async function supermemoryRequest(
+  path: string,
+  method: "GET" | "POST" | "PATCH",
+  body?: object
+) {
   const res = await fetch(`${SUPERMEMORY_BASE}${path}`, {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${process.env.SUPERMEMORY_API_KEY}`,
     },
-    body: JSON.stringify(body),
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Supermemory ${path} failed (${res.status}): ${text}`);
+    throw new Error(`Supermemory ${method} ${path} failed (${res.status}): ${text}`);
   }
   return res.json();
 }
@@ -30,20 +34,69 @@ function docKeyFromUrl(url: string): string {
 }
 
 /**
- * Store a document in supermemory. Fire-and-forget — errors are logged only.
+ * Sanitize a key for use as supermemory customId.
+ * Only alphanumeric, hyphens, and underscores allowed.
  */
-export async function storeDocument(docUrl: string) {
+function sanitizeCustomId(key: string): string {
+  return key.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+/**
+ * Store a document in supermemory, tagged with a constellation ID.
+ *
+ * Uses customId for deduplication. First tries to find an existing doc
+ * to append the constellation ID; falls back to creating a new one.
+ */
+export async function storeDocument(docUrl: string, constellationId: string): Promise<string> {
   const key = docKeyFromUrl(docUrl);
 
   try {
-    const storeResult = await supermemoryFetch("/v3/documents", {
-      content: docUrl,
-      metadata: { doc_key: key },
-    });
-    console.log("[supermemory] Stored document:", key, storeResult);
+    // Try to find existing document to append constellation ID
+    let patched = false;
+    try {
+      const listResult = await supermemoryRequest("/v3/documents/list", "POST", {
+        filters: {
+          AND: [{ filterType: "metadata", key: "doc_key", value: key }],
+        },
+      });
+      const docs = listResult.documents ?? listResult.results ?? [];
+      if (docs.length > 0) {
+        const existing = docs[0];
+        const ids: string[] = existing.metadata?.constellation_ids ?? [];
+        if (ids.includes(constellationId)) {
+          return `already-tagged:${key}`;
+        }
+        await supermemoryRequest(`/v3/documents/${existing.id}`, "PATCH", {
+          metadata: {
+            doc_key: key,
+            constellation_ids: [...ids, constellationId],
+          },
+        });
+        patched = true;
+        return `patched:${key}`;
+      }
+    } catch (listErr) {
+      const msg = listErr instanceof Error ? listErr.message : String(listErr);
+      return await createNew(docUrl, key, constellationId, `list-failed:${msg}`);
+    }
+
+    if (!patched) {
+      return await createNew(docUrl, key, constellationId);
+    }
+    return `done:${key}`;
   } catch (err) {
-    console.error("[supermemory] storeDocument failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    return `error:${msg}`;
   }
+}
+
+async function createNew(docUrl: string, key: string, constellationId: string, note?: string): Promise<string> {
+  const result = await supermemoryRequest("/v3/documents", "POST", {
+    content: docUrl,
+    customId: sanitizeCustomId(key),
+    metadata: { doc_key: key, constellation_ids: [constellationId] },
+  });
+  return `${note ? note + " → " : ""}created:${key} id=${result.id}`;
 }
 
 /**
@@ -52,15 +105,19 @@ export async function storeDocument(docUrl: string) {
 export async function ragSearchPerPaper(
   query: string,
   paperUrl: string,
-  paperTitle: string
+  paperTitle: string,
+  constellationId: string
 ): Promise<string> {
   const key = docKeyFromUrl(paperUrl);
 
   try {
-    const searchResult = await supermemoryFetch("/v3/search", {
+    const searchResult = await supermemoryRequest("/v3/search", "POST", {
       q: query,
       filters: {
-        AND: [{ filterType: "metadata", key: "doc_key", value: key }],
+        AND: [
+          { filterType: "metadata", key: "doc_key", value: key },
+          { filterType: "array_contains", key: "constellation_ids", value: constellationId },
+        ],
       },
       limit: 5,
     });
@@ -94,14 +151,20 @@ User question: ${query}`,
 }
 
 /**
- * RAG search across all stored papers. Returns answer + source arxiv IDs.
+ * RAG search across all stored papers in a constellation. Returns answer + source arxiv IDs.
  */
 export async function ragSearchGlobal(
-  query: string
+  query: string,
+  constellationId: string
 ): Promise<{ answer: string; sourceArxivIds: string[] }> {
   try {
-    const searchResult = await supermemoryFetch("/v3/search", {
+    const searchResult = await supermemoryRequest("/v3/search", "POST", {
       q: query,
+      filters: {
+        AND: [
+          { filterType: "array_contains", key: "constellation_ids", value: constellationId },
+        ],
+      },
       limit: 10,
     });
 
