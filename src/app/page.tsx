@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Textarea } from "@/components/ui/textarea";
 import { searchTopic, SearchResult } from "@/app/actions/search";
 
@@ -88,6 +89,15 @@ export default function Home() {
             ))}
           </div>
         )}
+
+        <div className="mt-10 flex justify-center">
+          <Link
+            href="/constellations"
+            className="rounded-full bg-[#ffd866] px-8 py-4 text-lg font-semibold text-[#0a0e1a] transition-transform hover:scale-105"
+          >
+            Enter Constellation Graph
+          </Link>
+        </div>
       </div>
     </div>
   );
