@@ -126,7 +126,13 @@ interface SavedConstellation {
 function loadConstellations(): SavedConstellation[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem("constellations") || "[]");
+    const raw: SavedConstellation[] = JSON.parse(localStorage.getItem("constellations") || "[]");
+    const seen = new Set<string>();
+    return raw.filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
   } catch {
     return [];
   }
@@ -168,11 +174,32 @@ export default function ConstellationView({
 
   useEffect(() => {
     const saved = loadConstellations();
-    const id = constellationIdProp || (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
-    setCurrentId(id);
-    currentIdRef.current = id;
 
-    if (topic) {
+    if (constellationIdProp) {
+      const exists = saved.some((c) => c.id === constellationIdProp);
+      setCurrentId(constellationIdProp);
+      currentIdRef.current = constellationIdProp;
+
+      if (!exists && topic) {
+        const entry: SavedConstellation = {
+          id: constellationIdProp,
+          name: topic,
+          topic,
+          paperTitle,
+          paperUrl,
+          createdAt: Date.now(),
+        };
+        const updated = [entry, ...saved];
+        saveConstellations(updated);
+        setConstellations(updated);
+      } else {
+        setConstellations(saved);
+      }
+    } else if (topic) {
+      const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+      setCurrentId(id);
+      currentIdRef.current = id;
+
       const entry: SavedConstellation = {
         id,
         name: topic,
@@ -184,6 +211,10 @@ export default function ConstellationView({
       const updated = [entry, ...saved];
       saveConstellations(updated);
       setConstellations(updated);
+
+      const params = new URLSearchParams(window.location.search);
+      params.set("id", id);
+      window.history.replaceState(null, "", `?${params.toString()}`);
     } else {
       setConstellations(saved);
     }
