@@ -267,6 +267,22 @@ export default function ConstellationView({
     setRenaming(null);
     setRenameValue("");
     renameConstellationDB(id, newName);
+
+    if (id === currentIdRef.current) {
+      const s = stateRef.current;
+      for (const [, node] of s.nodes) {
+        if (node.depth === 0) {
+          node.label = newName;
+          node.paperTitle = newName;
+          if (node.el) {
+            const labelEl = node.el.querySelector(`.${styles.starLabel}`);
+            if (labelEl) labelEl.textContent = newName;
+          }
+          break;
+        }
+      }
+      flushGraph();
+    }
   }
 
   function handleDelete(id: string) {
@@ -573,7 +589,7 @@ export default function ConstellationView({
       } else {
         const parentUrl = node.paperUrl ?? "";
         const parentTitle = node.paperTitle ?? node.label;
-        const result = await followUpSearch(parentUrl, parentTitle, text);
+        const result = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
         pickedPaper = result.pickedPaper;
         aiResponse = result.aiResponse;
       }

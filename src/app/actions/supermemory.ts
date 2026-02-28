@@ -152,6 +152,45 @@ export async function removeDocumentFromConstellation(docUrl: string, constellat
 }
 
 /**
+ * Fetch raw RAG excerpts from a paper (no Gemini synthesis).
+ * Used to enrich prompts in followUpSearch with relevant paper context.
+ */
+export async function fetchPaperExcerpts(
+  query: string,
+  paperUrl: string,
+  constellationId: string
+): Promise<string[]> {
+  const key = docKeyFromUrl(paperUrl);
+  if (!key) return [];
+
+  try {
+    const searchResult = await supermemoryRequest("/v3/search", "POST", withContainerTag({
+      q: query,
+      filters: {
+        AND: [
+          { filterType: "metadata", key: "doc_key", value: key },
+          { filterType: "array_contains", key: "constellation_ids", value: constellationId },
+        ],
+      },
+      limit: 5,
+    }));
+
+    const chunks: string[] = (searchResult.results ?? []).flatMap(
+      (r: { chunks?: { content: string }[] }) =>
+        (r.chunks ?? []).map((c) => c.content)
+    ).filter(Boolean);
+
+    console.log(`[supermemory] fetchPaperExcerpts query: "${query}" | doc_key: ${key} | chunks returned: ${chunks.length}`);
+    chunks.forEach((chunk, i) => console.log(`[supermemory] chunk[${i}]:`, chunk.slice(0, 200)));
+
+    return chunks;
+  } catch (err) {
+    console.warn("[supermemory] fetchPaperExcerpts failed:", err);
+    return [];
+  }
+}
+
+/**
  * RAG search scoped to a single paper. Returns a synthesized answer string.
  */
 export async function ragSearchPerPaper(
