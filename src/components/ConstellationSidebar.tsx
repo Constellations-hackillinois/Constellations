@@ -21,7 +21,7 @@ interface ConstellationSidebarProps {
 }
 
 export default function ConstellationSidebar({ activeId }: ConstellationSidebarProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
