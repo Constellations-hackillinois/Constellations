@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { followUpSearch } from "@/app/actions/search";
 import styles from "./constellations.module.css";
 
 // ─── Word lists ───
@@ -31,11 +32,6 @@ function pick<T>(arr: T[]): T {
 }
 function generateLabel(): string {
   return pick(ADJECTIVES) + " " + pick(NOUNS);
-}
-function generateResponse(): string {
-  return pick(AI_TEMPLATES)
-    .replace("{adj}", pick(ADJECTIVES).toLowerCase())
-    .replace("{noun}", pick(NOUNS).toLowerCase());
 }
 
 // ─── Types ───
@@ -203,7 +199,10 @@ function ConstellationsInner() {
     [toScreen, renderMessages]
   );
 
-  const sendMessage = useCallback(() => {
+  // Ref to break circular dep: sendMessage needs createNode which is declared later
+  const createNodeRef = useRef<(label: string, depth: number, parentId: number | null, angle: number) => ConstellationNode>(null!);
+
+  const sendMessage = useCallback(async () => {
     const s = stateRef.current;
     const input = chatInputRef.current;
     const text = input?.value.trim();
@@ -215,13 +214,64 @@ function ConstellationsInner() {
     if (input) input.value = "";
     renderMessages(node);
 
-    const currentChatNode = s.chatNodeId;
-    setTimeout(() => {
-      node.messages.push({ role: "ai", text: generateResponse() });
-      if (s.chatNodeId === currentChatNode) {
+    // Show searching indicator
+    node.messages.push({ role: "ai", text: "🔍 Searching for related papers..." });
+    renderMessages(node);
+    const parentNodeId = node.id;
+
+    try {
+      const parentUrl = node.paperUrl ?? "";
+      const parentTitle = node.paperTitle ?? node.label;
+      const { pickedPaper, aiResponse } = await followUpSearch(
+        parentUrl,
+        parentTitle,
+        text
+      );
+
+      // Replace the searching message with the real response
+      node.messages[node.messages.length - 1] = { role: "ai", text: aiResponse };
+      if (s.chatNodeId === parentNodeId) {
         renderMessages(node);
       }
-    }, 600 + Math.random() * 300);
+
+      // Spawn daughter node if a paper was found
+      if (pickedPaper) {
+        const toCenterAngle = Math.atan2(-node.y, -node.x);
+        const awayAngle = toCenterAngle + Math.PI;
+        const angle = awayAngle + (Math.random() - 0.5) * 1.2;
+
+        const child = createNodeRef.current(
+          pickedPaper.title,
+          node.depth + 1,
+          parentNodeId,
+          angle
+        );
+        child.paperTitle = pickedPaper.title;
+        child.paperUrl = pickedPaper.url;
+
+        child.el?.classList.add(styles.igniting);
+        const el = child.el;
+        if (el) setTimeout(() => el.classList.remove(styles.igniting), 600);
+
+        node.children.push(child.id);
+
+        s.edgeAnims.push({
+          fromId: parentNodeId,
+          toId: child.id,
+          progress: 0,
+          startTime: performance.now(),
+        });
+      }
+    } catch (err) {
+      console.error("[constellation] followUpSearch failed:", err);
+      node.messages[node.messages.length - 1] = {
+        role: "ai",
+        text: "Something went wrong while searching. Please try again.",
+      };
+      if (s.chatNodeId === parentNodeId) {
+        renderMessages(node);
+      }
+    }
   }, [renderMessages]);
 
   // ─── Node interactions ───
@@ -339,6 +389,9 @@ function ConstellationsInner() {
   // expandNode needs to be hoisted for the click handler closure
   // We use a ref to break the circular dependency
   const expandNodeRef = useRef<(id: number) => void>(() => { });
+
+  // Keep createNodeRef up to date
+  createNodeRef.current = createNode;
 
   const expandNode = useCallback(
     (id: number) => {

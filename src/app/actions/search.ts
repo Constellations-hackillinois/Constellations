@@ -89,3 +89,74 @@ export async function searchTopicWithPaper(
     console.log(`[search] Picked paper: "${pickedPaper?.title}" → ${pickedPaper?.url}`);
     return { results, pickedPaper };
 }
+
+export async function followUpSearch(
+    parentPaperUrl: string,
+    parentPaperTitle: string,
+    followUpQuestion: string
+): Promise<{ pickedPaper: PickedPaper | null; aiResponse: string }> {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const exa = new Exa(process.env.EXA_API_KEY);
+
+    // 1. Fetch parent paper content via Exa
+    let parentContent = "";
+    try {
+        const contentsResp = await exa.getContents([parentPaperUrl], {
+            text: { maxCharacters: 2000 },
+        });
+        parentContent =
+            contentsResp.results?.[0]?.text ?? "";
+    } catch (err) {
+        console.warn("[followUp] Could not fetch parent paper content:", err);
+    }
+
+    const parentContext = parentContent
+        ? `Paper title: "${parentPaperTitle}"\nPaper content excerpt:\n${parentContent.slice(0, 1500)}`
+        : `Paper title: "${parentPaperTitle}"`;
+
+    // 2. Ask Gemini to craft a refined Exa search query
+    const refineResp = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: `You are a research assistant. A user is exploring a constellation of research papers. They are currently reading a paper and have a follow-up question. Your job is to generate a single search query that will find the most relevant academic paper related to their question.
+
+Current paper context:
+${parentContext}
+
+User's follow-up question: "${followUpQuestion}"
+
+Generate a single, targeted web search query to find the most relevant related academic/research paper. Return ONLY the search query, no explanation.`,
+    });
+
+    const refinedQuery = refineResp.text?.trim() ?? followUpQuestion;
+    console.log(`[followUp] Follow-up: "${followUpQuestion}" → Query: "${refinedQuery}"`);
+
+    // 3. Search Exa
+    const searchResp = await exa.searchAndContents(refinedQuery, {
+        numResults: 5,
+        type: "auto",
+        category: "research paper",
+        highlights: { numSentences: 3, highlightsPerUrl: 1 },
+    });
+
+    const results: SearchResult[] = searchResp.results.map((r) => ({
+        title: r.title ?? "Untitled",
+        url: r.url,
+        text: r.highlights?.join(" ") ?? "",
+    }));
+
+    // 4. Pick best paper
+    const pickedPaper = await pickBestPaper(followUpQuestion, results);
+    console.log(`[followUp] Picked: "${pickedPaper?.title}" → ${pickedPaper?.url}`);
+
+    // 5. Generate a short AI response for the chat
+    const summaryResp = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: `You are a research assistant. A user asked "${followUpQuestion}" while reading "${parentPaperTitle}". You found a related paper: "${pickedPaper?.title ?? "none"}". Write a single brief sentence (max 30 words) explaining why this paper is relevant to their question. Be conversational and informative.`,
+    });
+
+    const aiResponse =
+        summaryResp.text?.trim() ??
+        `I found a related paper: ${pickedPaper?.title ?? "unknown"}`;
+
+    return { pickedPaper, aiResponse };
+}
