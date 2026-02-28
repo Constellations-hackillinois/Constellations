@@ -89,9 +89,31 @@ export async function upsertConstellation(c: SavedConstellation): Promise<void> 
 }
 
 export async function renameConstellation(id: string, name: string): Promise<void> {
+  const { data: existing } = await supabase
+    .from("constellations")
+    .select("graph_data")
+    .eq("id", id)
+    .single();
+
+  let graphPatch: SerializedGraph | undefined;
+  const graph = (existing as { graph_data: SerializedGraph | null } | null)?.graph_data;
+  if (graph && graph.nodes) {
+    const origin = graph.nodes.find((n) => n.depth === 0);
+    if (origin) {
+      origin.label = name;
+      origin.paperTitle = name;
+      graphPatch = graph;
+    }
+  }
+
   const { error } = await supabase
     .from("constellations")
-    .update({ name, title: name, updated_at: new Date().toISOString() })
+    .update({
+      name,
+      title: name,
+      updated_at: new Date().toISOString(),
+      ...(graphPatch ? { graph_data: graphPatch } : {}),
+    })
     .eq("id", id);
 
   if (error) {

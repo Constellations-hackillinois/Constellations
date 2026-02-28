@@ -265,6 +265,22 @@ export default function ConstellationView({
     setRenaming(null);
     setRenameValue("");
     renameConstellationDB(id, newName);
+
+    if (id === currentIdRef.current) {
+      const s = stateRef.current;
+      for (const [, node] of s.nodes) {
+        if (node.depth === 0) {
+          node.label = newName;
+          node.paperTitle = newName;
+          if (node.el) {
+            const labelEl = node.el.querySelector(`.${styles.starLabel}`);
+            if (labelEl) labelEl.textContent = newName;
+          }
+          break;
+        }
+      }
+      flushGraph();
+    }
   }
 
   function handleDelete(id: string) {
