@@ -122,7 +122,7 @@ export default function ConstellationView({
   paperUrl,
   constellationId: constellationIdProp,
 }: ConstellationViewProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
