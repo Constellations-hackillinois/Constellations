@@ -69,6 +69,7 @@ interface Star {
   speed: number;
   baseAlpha: number;
   depth: number;
+  tint: number[];
 }
 
 interface EdgeAnim {
@@ -1155,12 +1156,23 @@ export default function ConstellationView({
     const edgeCtx = edgeCanvas.getContext("2d")!;
     const chat = chatRef.current!;
 
+    const STAR_TINTS = [
+      [255, 255, 255],
+      [255, 255, 255],
+      [255, 240, 220],
+      [255, 216, 102],
+      [180, 220, 255],
+      [126, 200, 227],
+      [220, 200, 255],
+    ];
+
     function initStars() {
       s.stars = [];
       const count = Math.floor(
-        (starCanvas.width * starCanvas.height) / 3000
+        (starCanvas.width * starCanvas.height) / 2800
       );
       for (let i = 0; i < count; i++) {
+        const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
         s.stars.push({
           x: Math.random() * starCanvas.width,
           y: Math.random() * starCanvas.height,
@@ -1169,6 +1181,7 @@ export default function ConstellationView({
           speed: Math.random() * 0.8 + 0.3,
           baseAlpha: Math.random() * 0.5 + 0.15,
           depth: Math.random() * 0.12 + 0.03,
+          tint,
         });
       }
     }
@@ -1314,7 +1327,8 @@ export default function ConstellationView({
         const sy = ((star.y + s.panY * star.depth) % h + h) % h;
         starCtx.beginPath();
         starCtx.arc(sx, sy, star.r, 0, Math.PI * 2);
-        starCtx.fillStyle = `rgba(255,255,255,${Math.max(0.05, alpha)})`;
+        const t = star.tint;
+        starCtx.fillStyle = `rgba(${t[0]},${t[1]},${t[2]},${Math.max(0.05, alpha)})`;
         starCtx.fill();
       }
     }

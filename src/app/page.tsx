@@ -30,14 +30,28 @@ function Starfield() {
     resize();
     window.addEventListener("resize", resize);
 
-    const stars = Array.from({ length: 220 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.2 + 0.2,
-      phase: Math.random() * Math.PI * 2,
-      speed: Math.random() * 0.5 + 0.2,
-      base: Math.random() * 0.35 + 0.08,
-    }));
+    const STAR_TINTS = [
+      [255, 255, 255],   // white
+      [255, 255, 255],   // white (common)
+      [255, 240, 220],   // warm white
+      [255, 216, 102],   // gold
+      [180, 220, 255],   // cool blue
+      [126, 200, 227],   // constellation blue
+      [220, 200, 255],   // lavender
+    ];
+
+    const stars = Array.from({ length: 280 }, () => {
+      const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
+      return {
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.3 + 0.2,
+        phase: Math.random() * Math.PI * 2,
+        speed: Math.random() * 0.5 + 0.2,
+        base: Math.random() * 0.35 + 0.08,
+        tint,
+      };
+    });
 
     let raf: number;
     function draw(t: number) {
@@ -46,7 +60,7 @@ function Starfield() {
         const a = s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15;
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${Math.max(0.03, a)})`;
+        ctx.fillStyle = `rgba(${s.tint[0]},${s.tint[1]},${s.tint[2]},${Math.max(0.03, a)})`;
         ctx.fill();
       }
       raf = requestAnimationFrame(draw);
@@ -183,28 +197,47 @@ export default function Home() {
           <Starfield />
 
           <div
-            className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6 transition-all duration-1000 ${
-              mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
+            className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6`}
           >
             <h1
               className={`mb-3 text-4xl font-semibold tracking-tight text-white/90 sm:text-5xl transition-all duration-700 ${
                 phase === "collapsing" ? "opacity-0 -translate-y-10 scale-95" : ""
               }`}
+              style={{
+                opacity: mounted ? 1 : 0,
+                transform: mounted ? "translateY(0)" : "translateY(16px)",
+                transition: "opacity 800ms cubic-bezier(0.16,1,0.3,1), transform 800ms cubic-bezier(0.16,1,0.3,1)",
+                transitionDelay: "100ms",
+              }}
             >
               Constellations
             </h1>
             <p
-              className={`mb-10 text-base text-white/35 transition-all duration-500 ${
+              className={`mb-12 text-[15px] font-light tracking-wide text-white/30 transition-all duration-500 ${
                 phase === "collapsing" ? "opacity-0 -translate-y-6" : ""
               }`}
-              style={phase === "collapsing" ? { transitionDelay: "75ms" } : undefined}
+              style={{
+                letterSpacing: "0.04em",
+                opacity: mounted ? 1 : 0,
+                transform: mounted ? "translateY(0)" : "translateY(12px)",
+                transition: "opacity 700ms ease, transform 700ms ease",
+                transitionDelay: phase === "collapsing" ? "75ms" : "250ms",
+              }}
             >
               Explore the research universe, one paper at a time
             </p>
 
             {/* Input bar */}
-            <div className="relative w-full max-w-[680px]" style={{ height: 52 }}>
+            <div
+              className="relative w-full max-w-[680px]"
+              style={{
+                height: 56,
+                opacity: mounted ? 1 : 0,
+                transform: mounted ? "translateY(0)" : "translateY(10px)",
+                transition: "opacity 700ms ease, transform 700ms ease",
+                transitionDelay: "400ms",
+              }}
+            >
               <div
                 className={`${styles.inputBar} ${phase === "collapsing" ? styles.inputBarCollapsing : ""}`}
               >
@@ -247,16 +280,19 @@ export default function Home() {
 
             {/* Suggestion chips */}
             <div
-              className={`mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${
+              className={`mt-6 flex flex-wrap justify-center gap-2.5 transition-all duration-500 ${
                 phase === "collapsing" ? "opacity-0 translate-y-4" : ""
               }`}
             >
-              {SUGGESTIONS.map((s) => (
+              {SUGGESTIONS.map((s, i) => (
                 <button
                   key={s}
                   onClick={() => setQuery(s)}
                   disabled={phase !== "landing"}
-                  className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs text-white/35 transition-all duration-200 hover:border-white/[0.15] hover:bg-white/[0.06] hover:text-white/60 disabled:pointer-events-none"
+                  className={styles.suggestionChip}
+                  style={{
+                    animationDelay: mounted ? `${i * 60 + 400}ms` : "0ms",
+                  }}
                 >
                   {s}
                 </button>
