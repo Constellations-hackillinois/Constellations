@@ -1951,78 +1951,60 @@ export default function ConstellationView({
                   ))
                 )}
               </div>
-              <div className={styles.chatPaneInputArea}>
-                {pdfChatMessages.length === 0 && (
-                  <div className={styles.chatPaneQuickActions}>
-                    {['Summarize', 'Key findings', 'Methodology'].map((label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className={styles.chatPaneQuickBtn}
-                        onClick={() => {
-                          setPdfChatQuery(label);
-                          pdfChatInputRef.current?.focus();
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <form
-                  onSubmit={async (e: FormEvent) => {
-                    e.preventDefault();
-                    const q = pdfChatQuery.trim();
-                    if (!q || pdfChatLoading) return;
-                    const userId = crypto.randomUUID();
-                    const aiId = crypto.randomUUID();
-                    setPdfChatQuery("");
-                    setPdfChatLoading(true);
-                    setPdfChatMessages((prev) => [
-                      ...prev,
-                      { id: userId, role: "user", text: q },
-                      { id: aiId, role: "ai", text: "", loading: true },
-                    ]);
+              <form
+                className={styles.chatPaneFloatingForm}
+                onSubmit={async (e: FormEvent) => {
+                  e.preventDefault();
+                  const q = pdfChatQuery.trim();
+                  if (!q || pdfChatLoading) return;
+                  const userId = crypto.randomUUID();
+                  const aiId = crypto.randomUUID();
+                  setPdfChatQuery("");
+                  setPdfChatLoading(true);
+                  setPdfChatMessages((prev) => [
+                    ...prev,
+                    { id: userId, role: "user", text: q },
+                    { id: aiId, role: "ai", text: "", loading: true },
+                  ]);
+                  requestAnimationFrame(() => {
+                    pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
+                  });
+                  try {
+                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
+                    setPdfChatMessages((prev) =>
+                      prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
+                    );
+                  } catch {
+                    setPdfChatMessages((prev) =>
+                      prev.map((m) => m.id === aiId ? { ...m, text: "Something went wrong. Please try again.", loading: false } : m)
+                    );
+                  } finally {
+                    setPdfChatLoading(false);
                     requestAnimationFrame(() => {
                       pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
                     });
-                    try {
-                      const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
-                      setPdfChatMessages((prev) =>
-                        prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
-                      );
-                    } catch {
-                      setPdfChatMessages((prev) =>
-                        prev.map((m) => m.id === aiId ? { ...m, text: "Something went wrong. Please try again.", loading: false } : m)
-                      );
-                    } finally {
-                      setPdfChatLoading(false);
-                      requestAnimationFrame(() => {
-                        pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
-                      });
-                    }
-                  }}
-                >
-                  <div className={styles.chatPaneInputWrapper}>
-                    <input
-                      ref={pdfChatInputRef}
-                      className={styles.chatPaneInput}
-                      type="text"
-                      placeholder="Ask about this paper…"
-                      autoComplete="off"
-                      value={pdfChatQuery}
-                      onChange={(e) => setPdfChatQuery(e.target.value)}
-                    />
-                    <button
-                      type="submit"
-                      className={styles.chatPaneSendBtn}
-                      disabled={pdfChatLoading || !pdfChatQuery.trim()}
-                    >
-                      <SendHorizontal size={15} aria-hidden="true" />
-                    </button>
-                  </div>
-                </form>
-              </div>
+                  }
+                }}
+              >
+                <div className={styles.chatPaneInputWrapper}>
+                  <input
+                    ref={pdfChatInputRef}
+                    className={styles.chatPaneInput}
+                    type="text"
+                    placeholder="Ask about this paper…"
+                    autoComplete="off"
+                    value={pdfChatQuery}
+                    onChange={(e) => setPdfChatQuery(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className={styles.chatPaneSendBtn}
+                    disabled={pdfChatLoading || !pdfChatQuery.trim()}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
