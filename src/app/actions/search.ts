@@ -90,6 +90,94 @@ export async function searchTopicWithPaper(
     return { results, pickedPaper };
 }
 
+export async function expandSearch(
+    paperUrl: string,
+    paperTitle: string
+): Promise<PickedPaper[]> {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const exa = new Exa(process.env.EXA_API_KEY);
+
+    // 1. Fetch paper content for context
+    let paperContent = "";
+    try {
+        const contentsResp = await exa.getContents([paperUrl], {
+            text: { maxCharacters: 2000 },
+        });
+        paperContent = contentsResp.results?.[0]?.text ?? "";
+    } catch (err) {
+        console.warn("[expand] Could not fetch paper content:", err);
+    }
+
+    const paperContext = paperContent
+        ? `Paper title: "${paperTitle}"\nExcerpt:\n${paperContent.slice(0, 1500)}`
+        : `Paper title: "${paperTitle}"`;
+
+    // 2. Ask Gemini to generate a search query for related/cited papers
+    const refineResp = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: `You are a research assistant. Given a paper, generate a single search query that will find the most important related academic papers — papers it cites, papers that cite it, or papers exploring similar ideas.
+
+${paperContext}
+
+Generate a single, broad search query to find 3-5 closely related academic papers. Return ONLY the search query, no explanation.`,
+    });
+
+    const refinedQuery = refineResp.text?.trim() ?? paperTitle;
+    console.log(`[expand] Paper: "${paperTitle}" → Query: "${refinedQuery}"`);
+
+    // 3. Search Exa for related papers
+    const searchResp = await exa.searchAndContents(refinedQuery, {
+        numResults: 8,
+        type: "auto",
+        category: "research paper",
+        highlights: { numSentences: 2, highlightsPerUrl: 1 },
+    });
+
+    const results: SearchResult[] = searchResp.results
+        .filter((r) => r.url !== paperUrl) // exclude the parent paper itself
+        .map((r) => ({
+            title: r.title ?? "Untitled",
+            url: r.url,
+            text: r.highlights?.join(" ") ?? "",
+        }));
+
+    // 4. Ask Gemini to pick the 3-5 most relevant distinct papers
+    if (results.length === 0) return [];
+
+    const listText = results
+        .map(
+            (r, i) =>
+                `[${i + 1}] Title: ${r.title}\n    URL: ${r.url}\n    Excerpt: ${r.text.slice(0, 150)}`
+        )
+        .join("\n\n");
+
+    const pickResp = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: `You are a research assistant. Given a source paper and a list of search results, pick the 3 to 5 most relevant and diverse related papers. Prefer papers that cover different aspects or branches of the topic.
+
+Source paper: "${paperTitle}"
+
+Search results:
+${listText}
+
+Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No explanation, no markdown fences, just raw JSON array.`,
+    });
+
+    const raw = pickResp.text?.trim() ?? "[]";
+    try {
+        const parsed = JSON.parse(raw) as PickedPaper[];
+        if (Array.isArray(parsed)) {
+            return parsed
+                .filter((p) => p.title && p.url)
+                .slice(0, 5);
+        }
+    } catch {
+        console.warn("[expand] JSON parse failed, returning first 3 results");
+        return results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
+    }
+    return [];
+}
+
 export async function followUpSearch(
     parentPaperUrl: string,
     parentPaperTitle: string,

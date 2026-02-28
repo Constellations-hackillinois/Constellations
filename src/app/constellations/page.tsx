@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { followUpSearch } from "@/app/actions/search";
+import { followUpSearch, expandSearch } from "@/app/actions/search";
 import styles from "./constellations.module.css";
 
 
@@ -294,7 +294,7 @@ function ConstellationsInner() {
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        showChat(node.id);
+        expandNodeRef.current(node.id);
       });
 
       el.addEventListener("mouseenter", () => {
@@ -355,6 +355,80 @@ function ConstellationsInner() {
 
   // Keep createNodeRef up to date
   createNodeRef.current = createNode;
+
+  // Ref for expandNode so click handler can access it
+  const expandNodeRef = useRef<(id: number) => void>(() => {});
+
+  const expandNode = useCallback(
+    async (id: number) => {
+      const s = stateRef.current;
+      const parent = s.nodes.get(id);
+      if (!parent || parent.children.length > 0) {
+        // Already expanded — highlight subtree instead
+        if (parent && parent.children.length > 0) highlightSubtree(id);
+        return;
+      }
+
+      const paperTitle = parent.paperTitle ?? parent.label;
+      const paperUrl = parent.paperUrl ?? "";
+
+      // Show loading state on the node
+      if (parent.el) parent.el.style.opacity = "0.6";
+
+      try {
+        const papers = await expandSearch(paperUrl, paperTitle);
+
+        if (parent.el) parent.el.style.opacity = "1";
+        if (papers.length === 0) return;
+
+        const numChildren = papers.length;
+        const isOrigin = parent.depth === 0;
+        const parentAngle = Math.atan2(parent.y, parent.x);
+
+        for (let i = 0; i < numChildren; i++) {
+          let angle: number;
+          if (isOrigin) {
+            // Origin: distribute evenly around full circle
+            angle = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+          } else {
+            // Non-origin: narrow cone centered on parent's radial direction
+            const coneSpread = Math.PI * 0.22; // ~40° total
+            const t = numChildren === 1 ? 0.5 : i / (numChildren - 1);
+            angle = parentAngle - coneSpread / 2 + t * coneSpread + (Math.random() - 0.5) * 0.08;
+          }
+
+          const child = createNodeRef.current(
+            papers[i].title,
+            parent.depth + 1,
+            id,
+            angle
+          );
+          child.paperTitle = papers[i].title;
+          child.paperUrl = papers[i].url;
+
+          child.el?.classList.add(styles.igniting);
+          const el = child.el;
+          if (el) setTimeout(() => el.classList.remove(styles.igniting), 600);
+
+          parent.children.push(child.id);
+
+          s.edgeAnims.push({
+            fromId: id,
+            toId: child.id,
+            progress: 0,
+            startTime: performance.now() + i * 80,
+          });
+        }
+      } catch (err) {
+        console.error("[constellation] expandSearch failed:", err);
+        if (parent.el) parent.el.style.opacity = "1";
+      }
+    },
+    [highlightSubtree]
+  );
+
+  // Keep expandNodeRef up to date
+  expandNodeRef.current = expandNode;
 
   // ─── Main effect: setup everything ───
   useEffect(() => {
