@@ -586,7 +586,7 @@ export default function ConstellationView({
       } else {
         const parentUrl = node.paperUrl ?? "";
         const parentTitle = node.paperTitle ?? node.label;
-        const result = await followUpSearch(parentUrl, parentTitle, text);
+        const result = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
         pickedPaper = result.pickedPaper;
         aiResponse = result.aiResponse;
       }

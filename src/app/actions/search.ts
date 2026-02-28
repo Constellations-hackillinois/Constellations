@@ -3,6 +3,7 @@
 import Exa from "exa-js";
 import { GoogleGenAI } from "@google/genai";
 import { isArxivUrl, extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
+import { fetchPaperExcerpts } from "@/app/actions/supermemory";
 
 export interface SearchResult {
     title: string;
@@ -324,42 +325,198 @@ Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No ex
     return results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
 }
 
+async function pickBestPaperWithContext(
+    followUpQuestion: string,
+    results: SearchResult[],
+    parentPaperTitle: string,
+    ragExcerpts: string
+): Promise<PickedPaper | null> {
+    if (results.length === 0) return null;
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const listText = results
+        .map(
+            (r, i) =>
+                `[${i + 1}] Title: ${r.title || "Untitled"}\n    URL: ${r.url}\n    Excerpt: ${r.text.slice(0, 200)}`
+        )
+        .join("\n\n");
+
+    const contextBlock = ragExcerpts
+        ? `<reading_context>
+The user is reading "${parentPaperTitle}". Relevant excerpts from that paper:
+<excerpts>
+${ragExcerpts}
+</excerpts>
+</reading_context>`
+        : `<reading_context>
+The user is reading "${parentPaperTitle}".
+</reading_context>`;
+
+    const pickPrompt = `You are an expert research assistant specializing in academic paper recommendation.
+
+${contextBlock}
+
+<user_question>
+${followUpQuestion}
+</user_question>
+
+<candidate_papers>
+${listText}
+</candidate_papers>
+
+<instructions>
+Select the single most relevant paper from the candidates above.
+
+To make your selection, reason through:
+1. What specific concept or technique is the user asking about, given their question and reading context?
+2. Which candidate paper most directly addresses that concept?
+3. Is topical overlap strong enough, or is there a deeper conceptual match with another candidate?
+
+Prioritize papers that:
+- Directly address the method, technique, or phenomenon in the question
+- Connect to the specific context established by the reading excerpts (if provided)
+- Are the most precise match — not just broadly related, but specifically relevant
+
+Deprioritize papers that:
+- Share surface-level keywords but address a different problem
+- Are only tangentially related to the question
+</instructions>
+
+<output_format>
+Reply with ONLY a raw JSON object — no explanation, no markdown fences, no extra text.
+Required keys: "title" (string) and "url" (string).
+If the paper has no title, use an empty string.
+Example: {"title": "Some Paper Title", "url": "https://arxiv.org/pdf/example.pdf"}
+</output_format>`;
+
+    console.log("[followUp] pickBestPaperWithContext prompt:\n", pickPrompt);
+
+    const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: pickPrompt,
+    });
+
+    const raw = response.text?.trim() ?? "";
+    console.log("[search] pickBestPaperWithContext raw response:", raw);
+    try {
+        const parsed = JSON.parse(raw) as { title: string; url: string };
+        const matched = matchPickedPaper(parsed, results);
+        if (matched) return matched;
+    } catch (err) {
+        console.warn("[search] pickBestPaperWithContext JSON parse failed:", err);
+    }
+    console.warn("[search] Falling back to first result");
+    return { title: results[0].title, url: results[0].url };
+}
+
 export async function followUpSearch(
     parentPaperUrl: string,
     parentPaperTitle: string,
-    followUpQuestion: string
+    followUpQuestion: string,
+    constellationId: string
 ): Promise<{ pickedPaper: PickedPaper | null; aiResponse: string }> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const exa = new Exa(process.env.EXA_API_KEY);
     const canonicalParentUrl = toCanonicalArxivPdfUrl(parentPaperUrl) ?? parentPaperUrl;
 
-    // 1. Fetch parent paper content via Exa
-    let parentContent = "";
+    // 1. Fetch relevant excerpts from supermemory (RAG), fall back to Exa
+    let ragExcerpts = "";
     try {
-        const contentsResp = await exa.getContents([canonicalParentUrl], {
-            text: { maxCharacters: 2000 },
-        });
-        parentContent =
-            contentsResp.results?.[0]?.text ?? "";
+        const chunks = await fetchPaperExcerpts(followUpQuestion, canonicalParentUrl, constellationId);
+        if (chunks.length > 0) {
+            ragExcerpts = chunks.join("\n\n---\n\n").slice(0, 2000);
+            console.log(`[followUp] RAG returned ${chunks.length} excerpts for "${parentPaperTitle}"`);
+        }
     } catch (err) {
-        console.warn("[followUp] Could not fetch parent paper content:", err);
+        console.warn("[followUp] fetchPaperExcerpts failed:", err);
     }
 
-    const parentContext = parentContent
-        ? `Paper title: "${parentPaperTitle}"\nPaper content excerpt:\n${parentContent.slice(0, 1500)}`
+    // Fallback: fetch raw content from Exa if RAG returned nothing
+    if (!ragExcerpts) {
+        try {
+            const contentsResp = await exa.getContents([canonicalParentUrl], {
+                text: { maxCharacters: 2000 },
+            });
+            ragExcerpts = contentsResp.results?.[0]?.text ?? "";
+            if (ragExcerpts) {
+                console.log(`[followUp] Using Exa fallback content for "${parentPaperTitle}"`);
+            }
+        } catch (err) {
+            console.warn("[followUp] Exa fallback also failed:", err);
+        }
+    }
+
+    const contextBlock = ragExcerpts
+        ? `Paper title: "${parentPaperTitle}"\nRelevant excerpts from the paper (related to the user's question):\n${ragExcerpts.slice(0, 1500)}`
         : `Paper title: "${parentPaperTitle}"`;
 
     // 2. Ask Gemini to craft a refined Exa search query
+    const refinePrompt = `<role>
+You are an expert academic research assistant that generates precise search queries for Exa, a real-time AI-powered semantic search engine with specialized academic paper indexing. You understand Exa's neural search model deeply: it finds content by semantic meaning and embedding similarity, not keyword matching. Exa's dedicated "research paper" category indexes arXiv, peer-reviewed journals, and major academic publishers with state-of-the-art retrieval.
+</role>
+
+<context>
+A researcher is exploring a constellation of academic papers. They are currently reading a specific paper and have a follow-up question. Your task is to generate a single Exa-optimized search query targeting the "research paper" category that will surface the most semantically relevant academic paper.
+
+How Exa's neural search works:
+- Exa matches by conceptual meaning, not keyword frequency
+- The best queries describe the *content and nature of the target document* — written as if you are describing the paper you want to find
+- Queries should read like the opening sentence of the paper's abstract or a librarian's description of the ideal source
+- Exa supports long, semantically rich descriptions — more descriptive is better than more sparse
+- Do NOT use boolean operators, quotes, site: filters, or keyword-search syntax — these do not apply to Exa's neural model
+
+Exa "research paper" category targets: academic papers, arXiv preprints, peer-reviewed research, and scientific publications.
+</context>
+
+<examples>
+<example>
+<user_question>What methods exist for aligning large language models with human preferences?</user_question>
+<exa_query>Research paper on reinforcement learning from human feedback methods for aligning large language models with human values and preferences</exa_query>
+</example>
+<example>
+<user_question>Are there papers that challenge transformer architectures for sequence modeling?</user_question>
+<exa_query>Academic study proposing alternatives to transformer architecture for sequence modeling, such as state space models or recurrent approaches</exa_query>
+</example>
+<example>
+<user_question>What do we know about cell regeneration in adult mammals?</user_question>
+<exa_query>Research paper published in a major journal investigating mechanisms of cell regeneration and tissue repair in adult mammalian organisms</exa_query>
+</example>
+</examples>
+
+<current_paper>
+${contextBlock}
+</current_paper>
+
+<user_question>
+${followUpQuestion}
+</user_question>
+
+<instructions>
+1. Identify the core academic domain, methodology, and key concepts from the current paper
+2. Determine exactly what type of paper would answer the user's follow-up question
+3. Describe that ideal paper in natural language — write it as an opening sentence of its abstract or a librarian's description
+4. Use field-specific terminology from the paper's domain to maximize semantic relevance
+5. Frame the query to reflect the *content* of the target paper, not the user's question verbatim
+</instructions>
+
+<constraints>
+- Return ONLY the search query string — no explanation, label, prefix, or surrounding text
+- Write as a descriptive natural language phrase (10–25 words), not a keyword list
+- Do not use boolean operators, quotes, or keyword-search syntax
+- Do not include author names unless the question specifically requests a particular researcher's work
+- Begin the query with a content descriptor like "Research paper on...", "Academic study examining...", or "Study published in..." to help Exa's category targeting
+</constraints>
+
+<output_format>
+A single line containing only the Exa-optimized search query string.
+</output_format>`;
+
+    console.log("[followUp] refineQuery prompt:\n", refinePrompt);
+
     const refineResp = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `You are a research assistant. A user is exploring a constellation of research papers. They are currently reading a paper and have a follow-up question. Your job is to generate a single search query that will find the most relevant academic paper related to their question.
-
-Current paper context:
-${parentContext}
-
-User's follow-up question: "${followUpQuestion}"
-
-Generate a single, targeted web search query to find the most relevant related academic/research paper. Return ONLY the search query, no explanation.`,
+        contents: refinePrompt,
     });
 
     const refinedQuery = refineResp.text?.trim() ?? followUpQuestion;
@@ -367,17 +524,18 @@ Generate a single, targeted web search query to find the most relevant related a
 
     // 3. Search Exa
     const searchResp = await exa.searchAndContents(refinedQuery, {
-        numResults: 5,
+        numResults: 25,
         type: "auto",
-        category: "research paper",
-        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
     const results = normalizeSearchResults(searchResp.results, [canonicalParentUrl]);
+    console.log(`[followUp] Exa returned ${results.length} results:`, results.map(r => `"${r.title}" → ${r.url}`));
 
-    // 4. Pick best paper
-    const pickedPaper = await pickBestPaper(followUpQuestion, results);
+    // 4. Pick best paper with full context
+    const pickedPaper = await pickBestPaperWithContext(
+        followUpQuestion, results, parentPaperTitle, ragExcerpts
+    );
     console.log(`[followUp] Picked: "${pickedPaper?.title}" → ${pickedPaper?.url}`);
 
     // 5. Generate a short AI response for the chat
@@ -392,3 +550,4 @@ Generate a single, targeted web search query to find the most relevant related a
 
     return { pickedPaper, aiResponse };
 }
+
