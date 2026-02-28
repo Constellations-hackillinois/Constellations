@@ -347,6 +347,7 @@ export default function ConstellationView({
     edgeAnims: [] as EdgeAnim[],
     highlights: new Map<number, { startTime: number }>(),
     chatNodeId: null as number | null,
+    chatPinned: false,
     chatHideTimer: null as ReturnType<typeof setTimeout> | null,
     chatShowTimer: null as ReturnType<typeof setTimeout> | null,
     animFrameId: 0,
@@ -454,6 +455,7 @@ export default function ConstellationView({
   const hideChat = useCallback(() => {
     chatRef.current?.classList.remove(styles.visible);
     stateRef.current.chatNodeId = null;
+    stateRef.current.chatPinned = false;
   }, []);
 
   const clearChatTimers = useCallback(() => {
@@ -825,24 +827,17 @@ export default function ConstellationView({
         clearChatTimers();
       });
 
-      el.addEventListener("mouseenter", () => {
-        if (stateRef.current.draggedNodeId !== null) return;
-        if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
-        if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
-        s.chatShowTimer = setTimeout(() => showChat(node.id), 200);
-      });
-
-      el.addEventListener("mouseleave", () => {
-        if (stateRef.current.draggedNodeId !== null) return;
-        if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
-        s.chatHideTimer = setTimeout(hideChat, 150);
+      el.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openNodeSurface(node.id);
       });
 
       container.appendChild(el);
       node.el = el;
       updateNodePosition(node);
     },
-    [clearChatTimers, showChat, hideChat, updateNodePosition]
+    [clearChatTimers, openNodeSurface, updateNodePosition]
   );
 
   const createNode = useCallback(
@@ -1253,11 +1248,26 @@ export default function ConstellationView({
         if (didDragNode) {
           persistGraph();
         } else {
-          openNodeSurface(draggedNodeId);
+          const current = stateRef.current;
+          if (current.chatPinned && current.chatNodeId === draggedNodeId) {
+            hideChat();
+          } else {
+            current.chatPinned = true;
+            showChat(draggedNodeId);
+          }
         }
         return;
       }
 
+      if (s.isDragging && s.chatPinned) {
+        const movedDist = Math.hypot(
+          s.panX - s.panStartX,
+          s.panY - s.panStartY
+        );
+        if (movedDist < NODE_DRAG_THRESHOLD) {
+          hideChat();
+        }
+      }
       s.isDragging = false;
       document.body.style.cursor = "";
     }
@@ -1293,14 +1303,10 @@ export default function ConstellationView({
     document.addEventListener("mouseup", handleMouseUp);
     document.addEventListener("wheel", handleWheel, { passive: false });
 
-    function chatEnter() {
-      if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
+    function chatMouseDown(e: MouseEvent) {
+      e.stopPropagation();
     }
-    function chatLeave() {
-      s.chatHideTimer = setTimeout(hideChat, 150);
-    }
-    chat.addEventListener("mouseenter", chatEnter);
-    chat.addEventListener("mouseleave", chatLeave);
+    chat.addEventListener("mousedown", chatMouseDown);
 
     function drawStarField(time: number) {
       starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
@@ -1526,8 +1532,7 @@ export default function ConstellationView({
       document.removeEventListener("mousemove", handleGlowMove);
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("wheel", handleWheel);
-      chat.removeEventListener("mouseenter", chatEnter);
-      chat.removeEventListener("mouseleave", chatLeave);
+      chat.removeEventListener("mousedown", chatMouseDown);
       chatMessagesRootRef.current?.unmount();
       chatMessagesRootRef.current = null;
     };
