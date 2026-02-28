@@ -72,6 +72,7 @@ export async function searchTopic(query: string): Promise<SearchResult[]> {
         numResults: 5,
         type: "auto",
         category: "research paper",
+        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
@@ -136,6 +137,7 @@ Generate a single, targeted web search query to find the most relevant related a
         numResults: 5,
         type: "auto",
         category: "research paper",
+        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
