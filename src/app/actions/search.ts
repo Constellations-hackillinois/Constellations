@@ -17,7 +17,7 @@ export interface PickedPaper {
 async function rewriteQuery(userQuery: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `Given the following research topic, generate a single web search query specifically aimed at finding the most foundational or seminal academic paper on this subject. The query should target the original, landmark paper that established or defined the field. Return only the search query with no explanation or extra text.\n\nResearch topic: ${userQuery}`,
     });
     return response.text?.trim() ?? userQuery;
@@ -39,7 +39,7 @@ async function pickBestPaper(
         .join("\n\n");
 
     const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `You are a research assistant. Given the user's research topic and a list of academic papers returned by a search engine, pick the single most relevant and foundational paper.
 
 Research topic: "${userQuery}"
@@ -51,12 +51,13 @@ Reply with ONLY a JSON object with two keys: "title" and "url". No explanation, 
     });
 
     const raw = response.text?.trim() ?? "";
+    console.log("[search] pickBestPaper raw response:", raw);
     try {
         const parsed = JSON.parse(raw) as { title: string; url: string };
         if (parsed.title && parsed.url) return parsed;
-    } catch {
-        // fallback: return first result
-        console.warn("[search] pickBestPaper JSON parse failed, using first result");
+    } catch (err) {
+        console.warn("[search] pickBestPaper JSON parse failed:", err);
+        console.warn("[search] Falling back to first result");
         return { title: results[0].title, url: results[0].url };
     }
     return null;
@@ -71,6 +72,7 @@ export async function searchTopic(query: string): Promise<SearchResult[]> {
         numResults: 5,
         type: "auto",
         category: "research paper",
+        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
@@ -116,7 +118,7 @@ export async function followUpSearch(
 
     // 2. Ask Gemini to craft a refined Exa search query
     const refineResp = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `You are a research assistant. A user is exploring a constellation of research papers. They are currently reading a paper and have a follow-up question. Your job is to generate a single search query that will find the most relevant academic paper related to their question.
 
 Current paper context:
@@ -135,6 +137,7 @@ Generate a single, targeted web search query to find the most relevant related a
         numResults: 5,
         type: "auto",
         category: "research paper",
+        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
@@ -150,7 +153,7 @@ Generate a single, targeted web search query to find the most relevant related a
 
     // 5. Generate a short AI response for the chat
     const summaryResp = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: `You are a research assistant. A user asked "${followUpQuestion}" while reading "${parentPaperTitle}". You found a related paper: "${pickedPaper?.title ?? "none"}". Write a single brief sentence (max 30 words) explaining why this paper is relevant to their question. Be conversational and informative.`,
     });
 
