@@ -29,6 +29,7 @@ import {
   type SerializedGraph,
   type SerializedNode,
 } from "@/app/actions/constellations";
+import { normalizePaperTitle, normalizePaperUrl, normalizeRequiredTitle } from "@/lib/papers";
 
 interface PdfChatMessage {
   id: string;
@@ -122,6 +123,9 @@ export default function ConstellationView({
   paperUrl,
   constellationId: constellationIdProp,
 }: ConstellationViewProps) {
+  const normalizedTopic = normalizeRequiredTitle(topic, topic || "Origin");
+  const normalizedPaperTitle = normalizePaperTitle(paperTitle);
+  const normalizedPaperUrl = normalizePaperUrl(paperUrl);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -170,10 +174,10 @@ export default function ConstellationView({
         if (!exists && topic) {
           const entry: SavedConstellation = {
             id: resolvedId,
-            name: topic,
-            topic,
-            paperTitle,
-            paperUrl,
+            name: normalizedTopic,
+            topic: normalizedTopic,
+            paperTitle: normalizedPaperTitle ?? undefined,
+            paperUrl: normalizedPaperUrl ?? undefined,
             createdAt: Date.now(),
           };
           await upsertConstellation(entry);
@@ -186,10 +190,10 @@ export default function ConstellationView({
 
         const entry: SavedConstellation = {
           id: resolvedId,
-          name: topic,
-          topic,
-          paperTitle,
-          paperUrl,
+          name: normalizedTopic,
+          topic: normalizedTopic,
+          paperTitle: normalizedPaperTitle ?? undefined,
+          paperUrl: normalizedPaperUrl ?? undefined,
           createdAt: Date.now(),
         };
         await upsertConstellation(entry);
@@ -208,7 +212,7 @@ export default function ConstellationView({
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
-    const newName = renameValue.trim();
+    const newName = normalizeRequiredTitle(renameValue, renameValue.trim());
     const updated = constellations.map((c) =>
       c.id === id ? { ...c, name: newName } : c
     );
@@ -1498,12 +1502,12 @@ export default function ConstellationView({
     }
 
     function createFreshOrigin() {
-      const originLabel = topic || "Origin";
+      const originLabel = normalizedTopic;
       const originNode = createNode(originLabel, 0, null, 0);
-      originNode.paperTitle = paperTitle || null;
-      originNode.paperUrl = paperUrl || null;
-      if (paperUrl) {
-        ingestPaper(paperUrl, paperTitle || null, currentIdRef.current);
+      originNode.paperTitle = normalizedPaperTitle;
+      originNode.paperUrl = normalizedPaperUrl;
+      if (normalizedPaperUrl) {
+        ingestPaper(normalizedPaperUrl, normalizedPaperTitle, currentIdRef.current);
       }
     }
 

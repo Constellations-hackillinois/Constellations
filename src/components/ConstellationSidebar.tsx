@@ -14,6 +14,7 @@ import {
   deleteConstellation as deleteConstellationDB,
   type SavedConstellation,
 } from "@/app/actions/constellations";
+import { normalizeRequiredTitle } from "@/lib/papers";
 import styles from "@/app/constellations/constellations.module.css";
 
 interface ConstellationSidebarProps {
@@ -33,7 +34,7 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
-    const newName = renameValue.trim();
+    const newName = normalizeRequiredTitle(renameValue, renameValue.trim());
     const updated = constellations.map((c) =>
       c.id === id ? { ...c, name: newName } : c
     );
