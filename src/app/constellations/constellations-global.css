@@ -1,0 +1,10 @@
+/* Override global body styles for the constellations page */
+.constellations-root {
+  position: fixed;
+  inset: 0;
+  background: #0a0e1a;
+  overflow: hidden;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  user-select: none;
+  cursor: grab;
+}
