@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import styles from "./constellations.module.css";
 
 // ─── Word lists ───
@@ -49,6 +50,8 @@ interface ConstellationNode {
   children: number[];
   messages: { role: "user" | "ai"; text: string }[];
   el: HTMLDivElement | null;
+  paperTitle: string | null;
+  paperUrl: string | null;
 }
 
 interface Star {
@@ -70,7 +73,8 @@ interface EdgeAnim {
 const BASE_RADIUS = 110;
 const RING_SPACING = 100;
 
-export default function ConstellationsPage() {
+function ConstellationsInner() {
+  const searchParams = useSearchParams();
   const starCanvasRef = useRef<HTMLCanvasElement>(null);
   const edgeCanvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<HTMLDivElement>(null);
@@ -146,6 +150,23 @@ export default function ConstellationsPage() {
         container.appendChild(div);
       });
     }
+
+    // Show paper link if this node has one
+    if (node.paperUrl) {
+      const paperDiv = document.createElement("div");
+      paperDiv.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);";
+      const link = document.createElement("a");
+      link.href = node.paperUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.style.cssText = "display:block;font-size:11px;color:#ffd866;text-decoration:none;word-break:break-all;";
+      link.textContent = "📄 " + (node.paperTitle ?? "View Paper");
+      link.addEventListener("mouseenter", () => { link.style.textDecoration = "underline"; });
+      link.addEventListener("mouseleave", () => { link.style.textDecoration = "none"; });
+      paperDiv.appendChild(link);
+      container.appendChild(paperDiv);
+    }
+
     container.scrollTop = container.scrollHeight;
   }, []);
 
@@ -295,6 +316,8 @@ export default function ConstellationsPage() {
         children: [],
         messages: [],
         el: null,
+        paperTitle: null,
+        paperUrl: null,
       };
 
       if (depth > 0 && parentId !== null) {
@@ -315,7 +338,7 @@ export default function ConstellationsPage() {
 
   // expandNode needs to be hoisted for the click handler closure
   // We use a ref to break the circular dependency
-  const expandNodeRef = useRef<(id: number) => void>(() => {});
+  const expandNodeRef = useRef<(id: number) => void>(() => { });
 
   const expandNode = useCallback(
     (id: number) => {
@@ -550,7 +573,12 @@ export default function ConstellationsPage() {
     }
 
     // ─── Create origin node & start ───
-    createNode("Origin", 0, null, 0);
+    const originLabel = searchParams.get("paperTitle") || searchParams.get("topic") || "Origin";
+    const originNode = createNode(originLabel, 0, null, 0);
+    const pTitle = searchParams.get("paperTitle");
+    const pUrl = searchParams.get("paperUrl");
+    if (pTitle) originNode.paperTitle = pTitle;
+    if (pUrl) originNode.paperUrl = pUrl;
     s.animFrameId = requestAnimationFrame(frame);
 
     return () => {
@@ -596,5 +624,13 @@ export default function ConstellationsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function ConstellationsPage() {
+  return (
+    <Suspense>
+      <ConstellationsInner />
+    </Suspense>
   );
 }
