@@ -375,17 +375,20 @@
   pointer-events: all;
   cursor: pointer;
   transform: translate(-50%, -50%);
-  transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .starNode:hover {
-  filter: brightness(1.5) drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
-  transform: translate(-50%, -50%) scale(1.15);
+  filter: brightness(1.5);
+}
+
+.starNode:hover .starBody {
+  transform: scale(1.18);
 }
 
 .draggingNode {
   z-index: 4;
-  filter: brightness(1.6) drop-shadow(0 0 16px rgba(255, 255, 255, 0.28));
+  filter: brightness(1.6);
   transition: none;
 }
 
@@ -402,6 +405,7 @@
     drop-shadow(0 0 8px var(--c-node-child-glow))
     drop-shadow(0 0 22px rgba(126, 200, 227, 0.2));
   animation: starPulse 4s ease-in-out infinite;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .depth0 .starBody {
