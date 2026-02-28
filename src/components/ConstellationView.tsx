@@ -6,8 +6,10 @@ import {
   Compass,
   FileText,
   House,
-  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
+  Plus,
   Search,
   SendHorizontal,
   Trash2,
@@ -21,6 +23,7 @@ import styles from "@/app/constellations/constellations.module.css";
 
 // ─── Types ───
 type ChatMessageIcon = "bookOpen" | "search";
+type GlobalSearchMessageStatus = "complete" | "loading" | "error";
 
 interface ConstellationNode {
   id: number;
@@ -53,6 +56,14 @@ interface EdgeAnim {
   toId: number;
   progress: number;
   startTime: number;
+}
+
+interface GlobalSearchMessage {
+  id: string;
+  role: "user" | "ai";
+  text: string;
+  sourceArxivIds?: string[];
+  status?: GlobalSearchMessageStatus;
 }
 
 const BASE_RADIUS = 140;
@@ -114,6 +125,17 @@ async function fakeDelay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createClientId() {
+  return crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+}
+
+function isEditableElement(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 interface SavedConstellation {
   id: string;
   name: string;
@@ -166,8 +188,7 @@ export default function ConstellationView({
   const [ragMode, setRagMode] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
-  const [globalSearchAnswer, setGlobalSearchAnswer] = useState("");
-  const [globalSearchSources, setGlobalSearchSources] = useState(0);
+  const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
 
   const currentIdRef = useRef("");
@@ -256,6 +277,10 @@ export default function ConstellationView({
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const chatMessagesRootRef = useRef<Root | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const globalSearchRef = useRef<HTMLDivElement>(null);
+  const globalSearchInputRef = useRef<HTMLInputElement>(null);
+  const globalSearchMessagesRef = useRef<HTMLDivElement>(null);
+  const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
 
   const stateRef = useRef({
@@ -576,25 +601,123 @@ export default function ConstellationView({
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
 
+  const focusGlobalSearchInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      const input = globalSearchInputRef.current;
+      if (!input) return;
+      input.focus();
+      const length = input.value.length;
+      input.setSelectionRange(length, length);
+    });
+  }, []);
+
   const handleGlobalSearch = useCallback(async (query: string) => {
-    if (!query.trim()) return;
+    const trimmed = query.trim();
+    if (!trimmed || globalSearchLoading) return;
+    const userId = createClientId();
+    const assistantId = createClientId();
     setGlobalSearchLoading(true);
-    setGlobalSearchAnswer("");
-    setGlobalSearchSources(0);
+    setGlobalSearchQuery("");
+    globalSearchStickToBottomRef.current = true;
+    setGlobalSearchMessages((messages) => [
+      ...messages,
+      { id: userId, role: "user", text: trimmed, status: "complete" },
+      {
+        id: assistantId,
+        role: "ai",
+        text: "Searching the knowledge graph...",
+        status: "loading",
+      },
+    ]);
     try {
-      const { answer, sourceArxivIds } = await ragSearchGlobal(query, currentIdRef.current);
-      setGlobalSearchAnswer(answer);
-      setGlobalSearchSources(sourceArxivIds.length);
+      const { answer, sourceArxivIds } = await ragSearchGlobal(trimmed, currentIdRef.current);
+      setGlobalSearchMessages((messages) =>
+        messages.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                text: answer,
+                sourceArxivIds,
+                status: "complete",
+              }
+            : message
+        )
+      );
       if (sourceArxivIds.length > 0) {
         highlightNodesByArxivIds(sourceArxivIds);
       }
     } catch (err) {
       console.error("[constellation] globalSearch failed:", err);
-      setGlobalSearchAnswer("Something went wrong. Please try again.");
+      setGlobalSearchMessages((messages) =>
+        messages.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                text: "Something went wrong. Please try again.",
+                status: "error",
+              }
+            : message
+        )
+      );
     } finally {
       setGlobalSearchLoading(false);
     }
-  }, [highlightNodesByArxivIds]);
+  }, [globalSearchLoading, highlightNodesByArxivIds]);
+
+  const handleGlobalSearchMessagesScroll = useCallback(() => {
+    const container = globalSearchMessagesRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    globalSearchStickToBottomRef.current = distanceFromBottom < 32;
+  }, []);
+
+  useEffect(() => {
+    if (!globalSearchOpen) return;
+    globalSearchStickToBottomRef.current = true;
+    focusGlobalSearchInput();
+  }, [focusGlobalSearchInput, globalSearchOpen]);
+
+  useEffect(() => {
+    const container = globalSearchMessagesRef.current;
+    if (!container || !globalSearchOpen || !globalSearchStickToBottomRef.current) return;
+    container.scrollTo({ top: container.scrollHeight });
+  }, [globalSearchMessages, globalSearchOpen]);
+
+  useEffect(() => {
+    function handleGlobalSearchMouseDown(e: MouseEvent) {
+      if (!globalSearchOpen || globalSearchLoading) return;
+      const target = e.target as Node | null;
+      if (target && globalSearchRef.current?.contains(target)) return;
+      setGlobalSearchOpen(false);
+    }
+
+    function handleGlobalSearchKeyDown(e: KeyboardEvent) {
+      const openWithSlash =
+        e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      const openWithShortcut =
+        (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k";
+
+      if ((openWithSlash || openWithShortcut) && !isEditableElement(e.target)) {
+        e.preventDefault();
+        setGlobalSearchOpen(true);
+        focusGlobalSearchInput();
+        return;
+      }
+
+      if (e.key === "Escape" && globalSearchOpen) {
+        e.preventDefault();
+        if (globalSearchQuery.trim()) setGlobalSearchQuery("");
+        else setGlobalSearchOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleGlobalSearchMouseDown);
+    document.addEventListener("keydown", handleGlobalSearchKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleGlobalSearchMouseDown);
+      document.removeEventListener("keydown", handleGlobalSearchKeyDown);
+    };
+  }, [focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery]);
 
   const createNodeElement = useCallback(
     (node: ConstellationNode) => {
@@ -880,9 +1003,8 @@ export default function ConstellationView({
         (e.target as HTMLElement).closest(`.${styles.starNode}`) ||
         (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
         (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
-        (e.target as HTMLElement).closest(`.${styles.sidebarToggle}`) ||
         (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`) ||
-        (e.target as HTMLElement).closest(`.${styles.globalSearchContainer}`)
+        (e.target as HTMLElement).closest(`.${styles.globalSearchShell}`)
       )
         return;
       s.panAnimating = false;
@@ -1156,124 +1278,202 @@ export default function ConstellationView({
       </button>
 
       {/* ─── Global RAG search ─── */}
-      <div className={styles.globalSearchContainer} style={debugMode ? { right: 120 + 44 } : undefined}>
-        <button
-          className={styles.globalSearchToggle}
-          onClick={() => setGlobalSearchOpen((o) => !o)}
-          title="Search across all papers"
-        >
-          <Search size={16} aria-hidden="true" />
-        </button>
-        {globalSearchOpen && (
-          <div className={styles.globalSearchPanel}>
+      <div
+        ref={globalSearchRef}
+        className={`${styles.globalSearchShell} ${globalSearchOpen ? styles.globalSearchShellOpen : ""}`}
+      >
+        {globalSearchOpen ? (
+          <>
             <form
+              className={styles.globalSearchBar}
               onSubmit={(e) => {
                 e.preventDefault();
                 handleGlobalSearch(globalSearchQuery);
               }}
             >
+              <span className={styles.globalSearchLeadingIcon} aria-hidden="true">
+                <Search size={16} />
+              </span>
               <input
+                ref={globalSearchInputRef}
                 className={styles.globalSearchInput}
                 type="text"
-                placeholder="Ask across all papers..."
+                placeholder="Ask the knowledge graph..."
                 autoComplete="off"
-                autoFocus
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
               />
+              <button
+                type="submit"
+                className={styles.globalSearchAction}
+                title="Send"
+                disabled={!globalSearchQuery.trim() || globalSearchLoading}
+              >
+                <SendHorizontal size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={styles.globalSearchClose}
+                title="Close knowledge graph search"
+                onClick={() => setGlobalSearchOpen(false)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
             </form>
-            {globalSearchLoading && (
-              <div className={styles.globalSearchAnswer}>Searching...</div>
-            )}
-            {globalSearchAnswer && !globalSearchLoading && (
-              <div className={styles.globalSearchResults}>
-                <div className={styles.globalSearchAnswer}>{globalSearchAnswer}</div>
-                {globalSearchSources > 0 && (
-                  <div className={styles.globalSearchSources}>
-                    Found in {globalSearchSources} paper{globalSearchSources !== 1 ? "s" : ""}
+            <div className={styles.globalSearchDialog} role="dialog" aria-label="Knowledge graph search">
+              <div
+                ref={globalSearchMessagesRef}
+                className={styles.globalSearchMessages}
+                onScroll={handleGlobalSearchMessagesScroll}
+              >
+                {globalSearchMessages.length === 0 ? (
+                  <div className={styles.globalSearchEmpty}>
+                    Ask about themes, connections, or trends across this constellation.
                   </div>
+                ) : (
+                  globalSearchMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`${styles.globalSearchMessage} ${
+                        message.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi
+                      } ${message.status === "error" ? styles.globalSearchMessageError : ""}`}
+                    >
+                      <div className={styles.globalSearchBubble}>{message.text}</div>
+                      {message.role === "ai" && message.sourceArxivIds && message.sourceArxivIds.length > 0 && (
+                        <div className={styles.globalSearchMeta}>
+                          Found in {message.sourceArxivIds.length} paper
+                          {message.sourceArxivIds.length !== 1 ? "s" : ""}
+                        </div>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            className={styles.globalSearchCollapsed}
+            title="Search the knowledge graph"
+            aria-expanded={globalSearchOpen}
+            onClick={() => {
+              setGlobalSearchOpen(true);
+              focusGlobalSearchInput();
+            }}
+          >
+            <span className={styles.globalSearchLeadingIcon} aria-hidden="true">
+              <Search size={16} />
+            </span>
+            <span className={styles.globalSearchCollapsedLabel}>Ask the knowledge graph...</span>
+            <span className={styles.globalSearchShortcut}>⌘K</span>
+          </button>
         )}
       </div>
 
-      <button
-        className={styles.sidebarToggle}
-        onClick={() => setSidebarOpen((o) => !o)}
-        title="Toggle constellation list"
-      >
-        {sidebarOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
-      </button>
-      <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}>
-        <div className={styles.sidebarHeader}>Constellations</div>
-        <div className={styles.sidebarList}>
-          {constellations.length === 0 && (
-            <div className={styles.sidebarEmpty}>No saved constellations yet.</div>
-          )}
-          {constellations.map((c) => {
-            const isActive = c.id === currentId;
-            return (
-              <div
-                key={c.id}
-                className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""}`}
-              >
-                {renaming === c.id ? (
-                  <form
-                    className={styles.sidebarRenameForm}
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleRename(c.id);
-                    }}
-                  >
-                    <input
-                      className={styles.sidebarRenameInput}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      autoFocus
-                      onBlur={() => setRenaming(null)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") setRenaming(null);
-                      }}
-                    />
-                  </form>
-                ) : (
-                  <button
-                    className={styles.sidebarItemName}
-                    onClick={() => handleSelect(c)}
-                    title={c.topic}
-                  >
-                    {c.name}
-                  </button>
-                )}
-                <div className={styles.sidebarItemActions}>
-                  <button
-                    className={styles.sidebarAction}
-                    title="Rename"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRenaming(c.id);
-                      setRenameValue(c.name);
-                    }}
-                  >
-                    <Pencil size={14} aria-hidden="true" />
-                  </button>
-                  <button
-                    className={styles.sidebarAction}
-                    title="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(c.id);
-                    }}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+      {/* ─── Sidebar ─── */}
+      <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarExpanded : ""}`}>
+        <div className={styles.sidebarActions}>
+          <button
+            className={`${styles.sidebarActionBtn} ${styles.sidebarToggleBtn}`}
+            onClick={() => setSidebarOpen((o) => !o)}
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          >
+            <span className={styles.sidebarLogo} aria-hidden="true" />
+            {sidebarOpen ? (
+              <PanelLeftClose size={18} className={styles.sidebarCloseIcon} />
+            ) : (
+              <PanelLeftOpen size={18} className={styles.sidebarHoverIcon} />
+            )}
+          </button>
+          <button
+            className={styles.sidebarActionBtn}
+            onClick={() => { window.location.href = "/"; }}
+            title="New constellation"
+          >
+            <Plus size={18} />
+            {sidebarOpen && <span>New Constellation</span>}
+          </button>
+          <button
+            className={styles.sidebarActionBtn}
+            onClick={() => { setGlobalSearchOpen(true); focusGlobalSearchInput(); }}
+            title="Search Constellations"
+          >
+            <Search size={18} />
+            {sidebarOpen && <span>Search Constellations</span>}
+          </button>
         </div>
+        {sidebarOpen && (
+          <>
+            <div className={styles.sidebarDivider} />
+            <div className={styles.sidebarList}>
+              {constellations.length === 0 && (
+                <div className={styles.sidebarEmpty}>No saved constellations yet.</div>
+              )}
+              {constellations.map((c) => {
+                const isActive = c.id === currentId;
+                return (
+                  <div
+                    key={c.id}
+                    className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""}`}
+                  >
+                    {renaming === c.id ? (
+                      <form
+                        className={styles.sidebarRenameForm}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleRename(c.id);
+                        }}
+                      >
+                        <input
+                          className={styles.sidebarRenameInput}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          autoFocus
+                          onBlur={() => setRenaming(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setRenaming(null);
+                          }}
+                        />
+                      </form>
+                    ) : (
+                      <button
+                        className={styles.sidebarItemName}
+                        onClick={() => handleSelect(c)}
+                        title={c.topic}
+                      >
+                        {c.name}
+                      </button>
+                    )}
+                    <div className={styles.sidebarItemActions}>
+                      <button
+                        className={styles.sidebarAction}
+                        title="Rename"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenaming(c.id);
+                          setRenameValue(c.name);
+                        }}
+                      >
+                        <Pencil size={14} aria-hidden="true" />
+                      </button>
+                      <button
+                        className={styles.sidebarAction}
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(c.id);
+                        }}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </aside>
 
       <canvas ref={starCanvasRef} className={styles.starfield} />

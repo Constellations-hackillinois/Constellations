@@ -141,66 +141,101 @@
   transform: scale(1.05);
 }
 
-/* ─── Sidebar toggle ─── */
-.sidebarToggle {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 20;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--c-glass-border);
-  background: var(--c-glass);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.sidebarToggle:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
-  transform: scale(1.05);
-}
-
-/* ─── Sidebar panel ─── */
+/* ─── Sidebar ─── */
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
-  width: 280px;
+  width: 48px;
   height: 100%;
-  z-index: 15;
+  z-index: 20;
   background: rgba(6, 10, 20, 0.92);
   border-right: 1px solid var(--c-glass-border);
   backdrop-filter: blur(20px);
-  transform: translateX(-100%);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   pointer-events: all;
 }
 
-.sidebarOpen {
-  transform: translateX(0);
+.sidebarExpanded {
+  width: 280px;
 }
 
-.sidebarHeader {
-  padding: 24px 20px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: rgba(255, 216, 102, 0.7);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+.sidebarActions {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 6px;
+  gap: 2px;
   flex-shrink: 0;
+}
+
+.sidebarActionBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 36px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.sidebarActionBtn:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+}
+.sidebarActionBtn span {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ─── Sidebar logo toggle button ─── */
+.sidebarToggleBtn {
+  position: relative;
+}
+
+.sidebarLogo {
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.95) 0%, #ffd866 28%, rgba(255, 216, 102, 0.35) 55%, transparent 100%);
+  clip-path: polygon(50% 0%, 60% 36%, 100% 50%, 60% 64%, 50% 100%, 40% 64%, 0% 50%, 40% 36%);
+  filter: drop-shadow(0 0 4px rgba(255, 216, 102, 0.5));
+  flex-shrink: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebarHoverIcon {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebarCloseIcon {
+  margin-left: auto;
+}
+
+/* Collapsed: on hover, hide logo and show PanelLeftOpen */
+.sidebarToggleBtn:hover .sidebarLogo {
+  opacity: 0;
+}
+.sidebarToggleBtn:hover .sidebarHoverIcon {
+  opacity: 1;
+}
+
+/* Expanded: logo always visible, no hover swap */
+.sidebarExpanded .sidebarToggleBtn:hover .sidebarLogo {
+  opacity: 1;
+}
+
+.sidebarDivider {
+  height: 1px;
+  margin: 4px 12px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .sidebarList {
@@ -610,99 +645,214 @@
 }
 
 /* ─── Global RAG search ─── */
-.globalSearchContainer {
+.globalSearchShell {
   position: fixed;
   top: 16px;
-  right: 60px;
-  z-index: 20;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  z-index: 24;
 }
 
-.globalSearchToggle {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--c-glass-border);
-  background: var(--c-glass);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
+.globalSearchCollapsed,
+.globalSearchBar {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 16px;
+  border: 1px solid var(--c-chat-border);
+  background: var(--c-chat-bg);
+  color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.34),
+    0 0 1px rgba(255, 255, 255, 0.12) inset;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.globalSearchToggle:hover {
+.globalSearchCollapsed {
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.globalSearchCollapsed:hover,
+.globalSearchBar:focus-within {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
-  transform: scale(1.05);
+  color: rgba(255, 255, 255, 0.92);
 }
 
-.globalSearchPanel {
-  position: absolute;
-  top: 44px;
-  right: 0;
-  width: 340px;
+.globalSearchShellOpen {
+  z-index: 26;
+}
+
+.globalSearchBar {
+  padding: 0 8px 0 14px;
+}
+
+.globalSearchLeadingIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.globalSearchCollapsedLabel {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: left;
+}
+
+.globalSearchShortcut {
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.globalSearchDialog {
+  margin-top: 10px;
   background: var(--c-chat-bg);
   border: 1px solid var(--c-chat-border);
-  border-radius: 14px;
+  border-radius: 18px;
   backdrop-filter: blur(20px);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.46),
+    0 0 1px rgba(255, 255, 255, 0.1) inset;
   overflow: hidden;
-  animation: globalSearchIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: globalSearchDialogIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes globalSearchIn {
-  0% { opacity: 0; transform: scale(0.95) translateY(-4px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
+@keyframes globalSearchDialogIn {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .globalSearchInput {
-  width: 100%;
-  background: var(--c-chat-input-bg);
+  flex: 1;
+  min-width: 0;
+  background: transparent;
   border: none;
   color: var(--c-chat-text);
-  padding: 12px 14px;
   font-size: 13px;
   outline: none;
   font-family: inherit;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  box-sizing: border-box;
+  padding: 13px 0;
 }
 
 .globalSearchInput::placeholder {
   color: rgba(255, 255, 255, 0.2);
 }
 
-.globalSearchInput:focus {
-  background: rgba(255, 255, 255, 0.06);
+.globalSearchAction,
+.globalSearchClose {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
-.globalSearchResults {
-  padding: 12px 14px;
-  max-height: 300px;
+.globalSearchAction:hover:not(:disabled),
+.globalSearchClose:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.globalSearchAction:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.globalSearchMessages {
+  max-height: min(420px, calc(100vh - 116px));
   overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.globalSearchResults::-webkit-scrollbar { width: 3px; }
-.globalSearchResults::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+.globalSearchMessages::-webkit-scrollbar { width: 3px; }
+.globalSearchMessages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
 
-.globalSearchAnswer {
+.globalSearchEmpty {
+  padding: 6px 4px 2px;
   font-size: 12px;
-  color: var(--c-chat-text);
-  line-height: 1.6;
-  padding: 12px 14px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.46);
 }
 
-.globalSearchSources {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+.globalSearchMessage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.globalSearchMessageUser {
+  align-items: flex-end;
+}
+
+.globalSearchMessageAi {
+  align-items: flex-start;
+}
+
+.globalSearchBubble {
+  max-width: min(92%, 440px);
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--c-chat-text);
+  background: var(--c-chat-ai-bg);
+}
+
+.globalSearchMessageUser .globalSearchBubble {
+  background: var(--c-chat-user-bg);
+  text-align: right;
+}
+
+.globalSearchMessageError .globalSearchBubble {
+  border: 1px solid rgba(255, 132, 132, 0.22);
+  color: rgba(255, 225, 225, 0.96);
+}
+
+.globalSearchMeta {
+  padding: 0 4px;
   font-size: 11px;
-  color: rgba(255, 216, 102, 0.6);
+  color: rgba(255, 216, 102, 0.66);
+}
+
+@media (max-width: 640px) {
+  .globalSearchShell {
+    width: calc(100vw - 20px);
+    top: 12px;
+  }
+
+  .globalSearchShortcut {
+    display: none;
+  }
+
+  .globalSearchMessages {
+    max-height: min(52vh, 340px);
+  }
 }
 
 /* ─── Chat mode toggle ─── */

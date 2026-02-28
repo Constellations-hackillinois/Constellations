@@ -2,6 +2,7 @@
 
 import Exa from "exa-js";
 import { GoogleGenAI } from "@google/genai";
+import { isArxivUrl, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 
 export interface SearchResult {
     title: string;
@@ -14,8 +15,55 @@ export interface PickedPaper {
     url: string;
 }
 
-function normalizeArxivUrl(url: string): string {
-    return url.replace(/arxiv\.org\/abs\//g, "arxiv.org/pdf/");
+function normalizeTitle(title: string): string {
+    return title.trim().toLowerCase();
+}
+
+function normalizeSearchResults(
+    results: { title?: string | null; url: string; highlights?: string[] | null }[],
+    excludedUrls: string[] = []
+): SearchResult[] {
+    const excluded = new Set(excludedUrls);
+    const seen = new Set<string>();
+
+    return results.flatMap((result) => {
+        if (!result.url || !isArxivUrl(result.url)) return [];
+
+        const canonicalUrl = toCanonicalArxivPdfUrl(result.url);
+        if (!canonicalUrl || excluded.has(canonicalUrl) || seen.has(canonicalUrl)) return [];
+
+        seen.add(canonicalUrl);
+        return [{
+            title: result.title ?? "Untitled",
+            url: canonicalUrl,
+            text: result.highlights?.join(" ") ?? "",
+        }];
+    });
+}
+
+function matchPickedPaper(
+    candidate: Partial<PickedPaper>,
+    results: SearchResult[]
+): PickedPaper | null {
+    const byUrl = new Map(results.map((result) => [result.url, result]));
+    const byTitle = new Map(results.map((result) => [normalizeTitle(result.title), result]));
+
+    const canonicalUrl = candidate.url ? toCanonicalArxivPdfUrl(candidate.url) : null;
+    if (canonicalUrl) {
+        const matchedByUrl = byUrl.get(canonicalUrl);
+        if (matchedByUrl) {
+            return { title: matchedByUrl.title, url: matchedByUrl.url };
+        }
+    }
+
+    if (candidate.title) {
+        const matchedByTitle = byTitle.get(normalizeTitle(candidate.title));
+        if (matchedByTitle) {
+            return { title: matchedByTitle.title, url: matchedByTitle.url };
+        }
+    }
+
+    return null;
 }
 
 async function rewriteQuery(userQuery: string): Promise<string> {
@@ -58,13 +106,13 @@ Reply with ONLY a JSON object with two keys: "title" and "url". No explanation, 
     console.log("[search] pickBestPaper raw response:", raw);
     try {
         const parsed = JSON.parse(raw) as { title: string; url: string };
-        if (parsed.title && parsed.url) return parsed;
+        const matched = matchPickedPaper(parsed, results);
+        if (matched) return matched;
     } catch (err) {
         console.warn("[search] pickBestPaper JSON parse failed:", err);
-        console.warn("[search] Falling back to first result");
-        return { title: results[0].title, url: results[0].url };
     }
-    return null;
+    console.warn("[search] Falling back to first result");
+    return { title: results[0].title, url: results[0].url };
 }
 
 export async function searchTopic(query: string): Promise<SearchResult[]> {
@@ -80,11 +128,7 @@ export async function searchTopic(query: string): Promise<SearchResult[]> {
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
-    return response.results.map((r) => ({
-        title: r.title ?? "Untitled",
-        url: normalizeArxivUrl(r.url),
-        text: r.highlights?.join(" ") ?? "",
-    }));
+    return normalizeSearchResults(response.results);
 }
 
 export async function searchTopicWithPaper(
@@ -102,11 +146,12 @@ export async function expandSearch(
 ): Promise<PickedPaper[]> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const exa = new Exa(process.env.EXA_API_KEY);
+    const canonicalPaperUrl = toCanonicalArxivPdfUrl(paperUrl) ?? paperUrl;
 
     // 1. Fetch paper content for context
     let paperContent = "";
     try {
-        const contentsResp = await exa.getContents([paperUrl], {
+        const contentsResp = await exa.getContents([canonicalPaperUrl], {
             text: { maxCharacters: 2000 },
         });
         paperContent = contentsResp.results?.[0]?.text ?? "";
@@ -136,16 +181,11 @@ Generate a single, broad search query to find 3-5 closely related academic paper
         numResults: 8,
         type: "auto",
         category: "research paper",
+        includeDomains: ["arxiv.org"],
         highlights: { numSentences: 2, highlightsPerUrl: 1 },
     });
 
-    const results: SearchResult[] = searchResp.results
-        .filter((r) => r.url !== paperUrl) // exclude the parent paper itself
-        .map((r) => ({
-            title: r.title ?? "Untitled",
-            url: r.url,
-            text: r.highlights?.join(" ") ?? "",
-        }));
+    const results = normalizeSearchResults(searchResp.results, [canonicalPaperUrl]);
 
     // 4. Ask Gemini to pick the 3-5 most relevant distinct papers
     if (results.length === 0) return [];
@@ -173,15 +213,23 @@ Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No ex
     try {
         const parsed = JSON.parse(raw) as PickedPaper[];
         if (Array.isArray(parsed)) {
-            return parsed
-                .filter((p) => p.title && p.url)
-                .slice(0, 5);
+            const matched: PickedPaper[] = [];
+            const seen = new Set<string>();
+
+            for (const candidate of parsed) {
+                const paper = matchPickedPaper(candidate, results);
+                if (!paper || seen.has(paper.url)) continue;
+                seen.add(paper.url);
+                matched.push(paper);
+                if (matched.length === 5) break;
+            }
+
+            if (matched.length > 0) return matched;
         }
     } catch {
         console.warn("[expand] JSON parse failed, returning first 3 results");
-        return results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
     }
-    return [];
+    return results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
 }
 
 export async function followUpSearch(
@@ -191,11 +239,12 @@ export async function followUpSearch(
 ): Promise<{ pickedPaper: PickedPaper | null; aiResponse: string }> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const exa = new Exa(process.env.EXA_API_KEY);
+    const canonicalParentUrl = toCanonicalArxivPdfUrl(parentPaperUrl) ?? parentPaperUrl;
 
     // 1. Fetch parent paper content via Exa
     let parentContent = "";
     try {
-        const contentsResp = await exa.getContents([parentPaperUrl], {
+        const contentsResp = await exa.getContents([canonicalParentUrl], {
             text: { maxCharacters: 2000 },
         });
         parentContent =
@@ -233,11 +282,7 @@ Generate a single, targeted web search query to find the most relevant related a
         highlights: { numSentences: 3, highlightsPerUrl: 1 },
     });
 
-    const results: SearchResult[] = searchResp.results.map((r) => ({
-        title: r.title ?? "Untitled",
-        url: normalizeArxivUrl(r.url),
-        text: r.highlights?.join(" ") ?? "",
-    }));
+    const results = normalizeSearchResults(searchResp.results, [canonicalParentUrl]);
 
     // 4. Pick best paper
     const pickedPaper = await pickBestPaper(followUpQuestion, results);

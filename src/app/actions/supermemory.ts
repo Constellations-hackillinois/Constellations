@@ -1,9 +1,11 @@
 "use server";
 
 import { GoogleGenAI } from "@google/genai";
-import { extractArxivId } from "@/lib/arxiv";
+import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai";
+const SUPERMEMORY_CONTAINER_TAG =
+  process.env.SUPERMEMORY_CONTAINER_TAG || "sm_project_constellations";
 
 async function supermemoryRequest(
   path: string,
@@ -25,12 +27,19 @@ async function supermemoryRequest(
   return res.json();
 }
 
+function withContainerTag<T extends object>(body: T): T & { containerTags: string[] } {
+  return {
+    ...body,
+    containerTags: [SUPERMEMORY_CONTAINER_TAG],
+  };
+}
+
 /**
  * Derive a stable document key from a URL.
- * Uses arxiv ID if available, otherwise the full URL.
+ * Uses the versionless arXiv ID when available.
  */
-function docKeyFromUrl(url: string): string {
-  return extractArxivId(url) ?? url;
+function docKeyFromUrl(url: string): string | null {
+  return extractArxivId(url);
 }
 
 /**
@@ -49,12 +58,18 @@ function sanitizeCustomId(key: string): string {
  */
 export async function storeDocument(docUrl: string, constellationId: string): Promise<string> {
   const key = docKeyFromUrl(docUrl);
+  const canonicalDocUrl = toCanonicalArxivPdfUrl(docUrl);
+
+  if (!key || !canonicalDocUrl) {
+    return `skipped:non-arxiv:${docUrl}`;
+  }
 
   try {
     // Try to find existing document to append constellation ID
     let patched = false;
     try {
       const listResult = await supermemoryRequest("/v3/documents/list", "POST", {
+        containerTags: [SUPERMEMORY_CONTAINER_TAG],
         filters: {
           AND: [{ filterType: "metadata", key: "doc_key", value: key }],
         },
@@ -77,11 +92,11 @@ export async function storeDocument(docUrl: string, constellationId: string): Pr
       }
     } catch (listErr) {
       const msg = listErr instanceof Error ? listErr.message : String(listErr);
-      return await createNew(docUrl, key, constellationId, `list-failed:${msg}`);
+      return await createNew(canonicalDocUrl, key, constellationId, `list-failed:${msg}`);
     }
 
     if (!patched) {
-      return await createNew(docUrl, key, constellationId);
+      return await createNew(canonicalDocUrl, key, constellationId);
     }
     return `done:${key}`;
   } catch (err) {
@@ -93,6 +108,7 @@ export async function storeDocument(docUrl: string, constellationId: string): Pr
 async function createNew(docUrl: string, key: string, constellationId: string, note?: string): Promise<string> {
   const result = await supermemoryRequest("/v3/documents", "POST", {
     content: docUrl,
+    containerTag: SUPERMEMORY_CONTAINER_TAG,
     customId: sanitizeCustomId(key),
     metadata: { doc_key: key, constellation_ids: [constellationId] },
   });
@@ -109,9 +125,12 @@ export async function ragSearchPerPaper(
   constellationId: string
 ): Promise<string> {
   const key = docKeyFromUrl(paperUrl);
+  if (!key) {
+    return `I can only search arXiv papers right now. "${paperTitle}" doesn't have a canonical arXiv ID.`;
+  }
 
   try {
-    const searchResult = await supermemoryRequest("/v3/search", "POST", {
+    const searchResult = await supermemoryRequest("/v3/search", "POST", withContainerTag({
       q: query,
       filters: {
         AND: [
@@ -120,7 +139,7 @@ export async function ragSearchPerPaper(
         ],
       },
       limit: 5,
-    });
+    }));
 
     const chunks: string[] = (searchResult.results ?? []).flatMap(
       (r: { chunks?: { content: string }[] }) =>
@@ -158,7 +177,7 @@ export async function ragSearchGlobal(
   constellationId: string
 ): Promise<{ answer: string; sourceArxivIds: string[] }> {
   try {
-    const searchResult = await supermemoryRequest("/v3/search", "POST", {
+    const searchResult = await supermemoryRequest("/v3/search", "POST", withContainerTag({
       q: query,
       filters: {
         AND: [
@@ -166,7 +185,7 @@ export async function ragSearchGlobal(
         ],
       },
       limit: 10,
-    });
+    }));
 
     console.log("[supermemory] ragSearchGlobal raw response:", JSON.stringify(searchResult, null, 2));
 
