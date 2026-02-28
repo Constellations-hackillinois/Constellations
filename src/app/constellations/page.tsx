@@ -426,10 +426,12 @@ function ConstellationsInner() {
       body.className = styles.starBody;
       el.appendChild(body);
 
-      const label = document.createElement("div");
-      label.className = styles.starLabel;
-      label.textContent = node.label;
-      el.appendChild(label);
+      if (node.depth === 0) {
+        const label = document.createElement("div");
+        label.className = styles.starLabel;
+        label.textContent = node.label;
+        el.appendChild(label);
+      }
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
