@@ -1730,27 +1730,16 @@ export default function ConstellationView({
               >
                 <SendHorizontal size={14} aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                className={styles.globalSearchClose}
-                title="Close knowledge graph search"
-                onClick={() => setGlobalSearchOpen(false)}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
+
             </form>
-            <div className={styles.globalSearchDialog} role="dialog" aria-label="Knowledge graph search">
-              <div
-                ref={globalSearchMessagesRef}
-                className={styles.globalSearchMessages}
-                onScroll={handleGlobalSearchMessagesScroll}
-              >
-                {globalSearchMessages.length === 0 ? (
-                  <div className={styles.globalSearchEmpty}>
-                    Ask about themes, connections, or trends across this constellation.
-                  </div>
-                ) : (
-                  globalSearchMessages.map((message) => (
+            {globalSearchMessages.length > 0 && (
+              <div className={styles.globalSearchDialog} role="dialog" aria-label="Knowledge graph search">
+                <div
+                  ref={globalSearchMessagesRef}
+                  className={styles.globalSearchMessages}
+                  onScroll={handleGlobalSearchMessagesScroll}
+                >
+                  {globalSearchMessages.map((message) => (
                     <div
                       key={message.id}
                       className={`${styles.globalSearchMessage} ${message.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi
@@ -1764,10 +1753,10 @@ export default function ConstellationView({
                         </div>
                       )}
                     </div>
-                  ))
-                )}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </>
         ) : (
           <button
