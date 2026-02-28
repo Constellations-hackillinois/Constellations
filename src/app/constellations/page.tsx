@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, Suspense } from "react";
+import { useEffect, useRef, useCallback, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { followUpSearch } from "@/app/actions/search";
 import styles from "./constellations.module.css";
@@ -41,8 +41,88 @@ interface EdgeAnim {
 const BASE_RADIUS = 110;
 const RING_SPACING = 100;
 
+interface SavedConstellation {
+  id: string;
+  name: string;
+  topic: string;
+  paperTitle?: string;
+  paperUrl?: string;
+  createdAt: number;
+}
+
+function loadConstellations(): SavedConstellation[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("constellations") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveConstellations(list: SavedConstellation[]) {
+  localStorage.setItem("constellations", JSON.stringify(list));
+}
+
 function ConstellationsInner() {
   const searchParams = useSearchParams();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const currentTopic = searchParams.get("topic") || "";
+  const currentId = searchParams.get("id") || "";
+
+  useEffect(() => {
+    const saved = loadConstellations();
+    if (currentTopic && !currentId) {
+      const id = crypto.randomUUID();
+      const entry: SavedConstellation = {
+        id,
+        name: currentTopic,
+        topic: currentTopic,
+        paperTitle: searchParams.get("paperTitle") || undefined,
+        paperUrl: searchParams.get("paperUrl") || undefined,
+        createdAt: Date.now(),
+      };
+      const updated = [entry, ...saved];
+      saveConstellations(updated);
+      setConstellations(updated);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("id", id);
+      window.history.replaceState(null, "", `?${params.toString()}`);
+    } else {
+      setConstellations(saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleRename(id: string) {
+    if (!renameValue.trim()) return;
+    const updated = constellations.map((c) =>
+      c.id === id ? { ...c, name: renameValue.trim() } : c
+    );
+    saveConstellations(updated);
+    setConstellations(updated);
+    setRenaming(null);
+    setRenameValue("");
+  }
+
+  function handleDelete(id: string) {
+    const updated = constellations.filter((c) => c.id !== id);
+    saveConstellations(updated);
+    setConstellations(updated);
+  }
+
+  function handleSelect(c: SavedConstellation) {
+    const params = new URLSearchParams();
+    params.set("topic", c.topic);
+    params.set("id", c.id);
+    if (c.paperTitle) params.set("paperTitle", c.paperTitle);
+    if (c.paperUrl) params.set("paperUrl", c.paperUrl);
+    window.location.href = `/constellations?${params.toString()}`;
+  }
+
   const starCanvasRef = useRef<HTMLCanvasElement>(null);
   const edgeCanvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<HTMLDivElement>(null);
@@ -401,7 +481,9 @@ function ConstellationsInner() {
     function handleMouseDown(e: MouseEvent) {
       if (
         (e.target as HTMLElement).closest(`.${styles.starNode}`) ||
-        (e.target as HTMLElement).closest(`.${styles.chatWindow}`)
+        (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
+        (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
+        (e.target as HTMLElement).closest(`.${styles.sidebarToggle}`)
       )
         return;
       s.isDragging = true;
@@ -570,6 +652,84 @@ function ConstellationsInner() {
 
   return (
     <>
+      {/* ─── Sidebar ─── */}
+      <button
+        className={styles.sidebarToggle}
+        onClick={() => setSidebarOpen((o) => !o)}
+        title="Toggle constellation list"
+      >
+        {sidebarOpen ? "\u2715" : "\u2630"}
+      </button>
+      <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}>
+        <div className={styles.sidebarHeader}>Constellations</div>
+        <div className={styles.sidebarList}>
+          {constellations.length === 0 && (
+            <div className={styles.sidebarEmpty}>No saved constellations yet.</div>
+          )}
+          {constellations.map((c) => {
+            const isActive = c.id === currentId;
+            return (
+              <div
+                key={c.id}
+                className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""}`}
+              >
+                {renaming === c.id ? (
+                  <form
+                    className={styles.sidebarRenameForm}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleRename(c.id);
+                    }}
+                  >
+                    <input
+                      className={styles.sidebarRenameInput}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      autoFocus
+                      onBlur={() => setRenaming(null)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setRenaming(null);
+                      }}
+                    />
+                  </form>
+                ) : (
+                  <button
+                    className={styles.sidebarItemName}
+                    onClick={() => handleSelect(c)}
+                    title={c.topic}
+                  >
+                    {c.name}
+                  </button>
+                )}
+                <div className={styles.sidebarItemActions}>
+                  <button
+                    className={styles.sidebarAction}
+                    title="Rename"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenaming(c.id);
+                      setRenameValue(c.name);
+                    }}
+                  >
+                    &#9998;
+                  </button>
+                  <button
+                    className={styles.sidebarAction}
+                    title="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(c.id);
+                    }}
+                  >
+                    &#128465;
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
       <canvas ref={starCanvasRef} className={styles.starfield} />
       <canvas ref={edgeCanvasRef} className={styles.edges} />
       <div ref={nodesRef} className={styles.nodesContainer} />
