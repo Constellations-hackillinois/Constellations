@@ -37,6 +37,7 @@ interface PdfChatMessage {
   loading?: boolean;
 }
 import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
 
@@ -1262,6 +1263,9 @@ export default function ConstellationView({
     }
 
     function handleWheel(e: WheelEvent) {
+      // Allow native scroll inside the PDF overlay (chat panel, etc.)
+      if ((e.target as HTMLElement)?.closest?.('[data-pdf-overlay]')) return;
+
       e.preventDefault();
       s.panAnimating = false;
       const oldZoom = s.zoom;
@@ -1814,12 +1818,12 @@ export default function ConstellationView({
       </div>
 
       {pdfUrl && (
-        <div className={styles.pdfOverlay} onClick={() => setPdfUrl(null)}>
-          <div className={styles.pdfPanel} onClick={(e) => e.stopPropagation()}>
-            {/* ── PDF side ── */}
-            <div className={styles.pdfContent}>
-              <div className={styles.pdfHeader}>
-                <span className={styles.pdfHeaderTitle}>{pdfTitle}</span>
+        <div data-pdf-overlay className={styles.pdfOverlay} onClick={() => setPdfUrl(null)} onWheel={(e) => e.stopPropagation()}>
+          <div className={`${styles.pdfPanel} flex flex-row gap-3 p-3 h-[90vh] max-h-[900px]`} onClick={(e) => e.stopPropagation()}>
+            {/* ── PDF Card ── */}
+            <Card className="flex-[3] h-full flex flex-col bg-[rgba(8,12,24,0.92)] border-white/[0.08] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4),inset_0_0_1px_rgba(255,255,255,0.1)] rounded-2xl py-0 gap-0 overflow-hidden min-w-0">
+              <CardHeader className="flex flex-row items-center gap-2 px-3 py-2 !pb-2 border-b border-white/[0.06]">
+                <CardTitle className="flex-1 text-[12px] text-[rgba(255,216,102,0.85)] truncate">{pdfTitle}</CardTitle>
                 <div className={styles.pdfHeaderActions}>
                   <a
                     href={pdfUrl}
@@ -1838,109 +1842,113 @@ export default function ConstellationView({
                     <X size={16} aria-hidden="true" />
                   </button>
                 </div>
-              </div>
-              {pdfLoading && (
-                <div className={styles.pdfLoading}>
-                  <div className={styles.pdfSpinner} />
-                  Loading paper…
-                </div>
-              )}
-              <iframe
-                className={styles.pdfIframe}
-                src={pdfUrl}
-                title={pdfTitle}
-                onLoad={() => setPdfLoading(false)}
-              />
-            </div>
-
-            {/* ── RAG Chat side ── */}
-            <div className={styles.pdfChat}>
-              <div className={styles.pdfChatHeader}>
-                <BookOpen size={14} aria-hidden="true" />
-                Ask about this paper
-              </div>
-              <div
-                ref={pdfChatMessagesRef}
-                className={styles.pdfChatMessages}
-              >
-                {pdfChatMessages.length === 0 ? (
-                  <div className={styles.pdfChatEmpty}>
-                    Ask any question about this paper. Answers are powered by the knowledge graph.
+              </CardHeader>
+              <CardContent className="flex-1 p-0 relative" style={{ minHeight: 0 }}>
+                {pdfLoading && (
+                  <div className={styles.pdfLoading}>
+                    <div className={styles.pdfSpinner} />
+                    Loading paper…
                   </div>
-                ) : (
-                  pdfChatMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`${styles.pdfChatMsg} ${msg.role === "user" ? styles.pdfChatUser : styles.pdfChatAi}`}
-                    >
-                      {msg.loading ? (
-                        <span className={styles.pdfChatThinking}>
-                          <div className={styles.pdfSpinner} style={{ width: 14, height: 14 }} />
-                          Thinking…
-                        </span>
-                      ) : (
-                        msg.text
-                      )}
-                    </div>
-                  ))
                 )}
-              </div>
-              <form
-                className={styles.pdfChatInputArea}
-                onSubmit={async (e: FormEvent) => {
-                  e.preventDefault();
-                  const q = pdfChatQuery.trim();
-                  if (!q || pdfChatLoading) return;
-                  const userId = crypto.randomUUID();
-                  const aiId = crypto.randomUUID();
-                  setPdfChatQuery("");
-                  setPdfChatLoading(true);
-                  setPdfChatMessages((prev) => [
-                    ...prev,
-                    { id: userId, role: "user", text: q },
-                    { id: aiId, role: "ai", text: "", loading: true },
-                  ]);
-                  requestAnimationFrame(() => {
-                    pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
-                  });
-                  try {
-                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
-                    setPdfChatMessages((prev) =>
-                      prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
-                    );
-                  } catch {
-                    setPdfChatMessages((prev) =>
-                      prev.map((m) => m.id === aiId ? { ...m, text: "Something went wrong. Please try again.", loading: false } : m)
-                    );
-                  } finally {
-                    setPdfChatLoading(false);
+                <iframe
+                  className={styles.pdfIframe}
+                  src={pdfUrl}
+                  title={pdfTitle}
+                  onLoad={() => setPdfLoading(false)}
+                />
+              </CardContent>
+            </Card>
+
+            {/* ── RAG Chat Card ── */}
+            <Card className="flex-[2] h-full flex flex-col bg-[rgba(8,12,24,0.92)] border-white/[0.08] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4),inset_0_0_1px_rgba(255,255,255,0.1)] rounded-2xl py-0 gap-0 overflow-hidden min-w-0">
+              <CardContent className="flex-1 min-h-0 p-0 relative">
+                <div
+                  ref={pdfChatMessagesRef}
+                  className={styles.pdfChatMessages}
+                >
+                  {pdfChatMessages.length === 0 ? (
+                    <div className={styles.pdfChatEmpty}>
+                      Ask any question about this paper. Answers are powered by the knowledge graph.
+                    </div>
+                  ) : (
+                    pdfChatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`${styles.pdfChatMsg} ${msg.role === "user" ? styles.pdfChatUser : styles.pdfChatAi}`}
+                      >
+                        {msg.loading ? (
+                          <span className={styles.pdfChatThinking}>
+                            <div className={styles.pdfSpinner} style={{ width: 14, height: 14 }} />
+                            Thinking…
+                          </span>
+                        ) : (
+                          msg.text
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+                <form
+                  className="absolute bottom-0 left-0 right-0 p-3"
+                  style={{ background: "linear-gradient(to top, rgba(8,12,24,0.95) 60%, transparent)" }}
+                  onSubmit={async (e: FormEvent) => {
+                    e.preventDefault();
+                    const q = pdfChatQuery.trim();
+                    if (!q || pdfChatLoading) return;
+                    const userId = crypto.randomUUID();
+                    const aiId = crypto.randomUUID();
+                    setPdfChatQuery("");
+                    setPdfChatLoading(true);
+                    setPdfChatMessages((prev) => [
+                      ...prev,
+                      { id: userId, role: "user", text: q },
+                      { id: aiId, role: "ai", text: "", loading: true },
+                    ]);
                     requestAnimationFrame(() => {
                       pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
                     });
-                  }
-                }}
-              >
-                <input
-                  ref={pdfChatInputRef}
-                  className={styles.pdfChatInput}
-                  type="text"
-                  placeholder="Ask about this paper…"
-                  autoComplete="off"
-                  value={pdfChatQuery}
-                  onChange={(e) => setPdfChatQuery(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  className={styles.pdfChatSend}
-                  disabled={pdfChatLoading || !pdfChatQuery.trim()}
+                    try {
+                      const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
+                      setPdfChatMessages((prev) =>
+                        prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
+                      );
+                    } catch {
+                      setPdfChatMessages((prev) =>
+                        prev.map((m) => m.id === aiId ? { ...m, text: "Something went wrong. Please try again.", loading: false } : m)
+                      );
+                    } finally {
+                      setPdfChatLoading(false);
+                      requestAnimationFrame(() => {
+                        pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
+                      });
+                    }
+                  }}
                 >
-                  <SendHorizontal size={15} aria-hidden="true" />
-                </button>
-              </form>
-            </div>
+                  <div className={styles.pdfChatInputWrapper}>
+                    <input
+                      ref={pdfChatInputRef}
+                      className={styles.pdfChatInput}
+                      type="text"
+                      placeholder="Ask about this paper…"
+                      autoComplete="off"
+                      value={pdfChatQuery}
+                      onChange={(e) => setPdfChatQuery(e.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      className={styles.pdfChatSend}
+                      disabled={pdfChatLoading || !pdfChatQuery.trim()}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                    </button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
           </div>
-        </div>
-      )}
+        </div >
+      )
+      }
 
       <div className={styles.onboardingHint}>
         Click a node to view paper &middot; Hover for details &middot; Drag to pan &middot; Scroll to zoom
