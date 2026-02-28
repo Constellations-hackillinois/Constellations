@@ -1,6 +1,6 @@
 "use server";
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai";
@@ -191,13 +191,58 @@ export async function fetchPaperExcerpts(
 }
 
 /**
- * RAG search scoped to a single paper. Returns a synthesized answer string.
+ * Search the paper via supermemory RAG and return relevant excerpts.
+ */
+async function searchPaperChunks(
+  searchQuery: string,
+  docKey: string,
+  constellationId: string
+): Promise<string[]> {
+  const searchResult = await supermemoryRequest("/v3/search", "POST", withContainerTag({
+    q: searchQuery,
+    filters: {
+      AND: [
+        { filterType: "metadata", key: "doc_key", value: docKey },
+        { filterType: "array_contains", key: "constellation_ids", value: constellationId },
+      ],
+    },
+    limit: 5,
+  }));
+
+  return (searchResult.results ?? []).flatMap(
+    (r: { chunks?: { content: string }[] }) =>
+      (r.chunks ?? []).map((c) => c.content)
+  ).filter(Boolean);
+}
+
+// Tool declaration for Gemini function calling
+const searchPaperTool = {
+  functionDeclarations: [{
+    name: "search_paper",
+    description: "Search the current research paper for specific information. Use this when you need to find facts, data, methods, or details from the paper that aren't already in the conversation. Do NOT call this for follow-up questions where you already have enough context to answer.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: "A specific, descriptive search query to find relevant passages in the paper. Should be a clear topic or question, not a vague reference.",
+        },
+      },
+      required: ["query"],
+    },
+  }],
+};
+
+/**
+ * Agentic RAG search scoped to a single paper.
+ * Gemini decides whether to search the paper or answer from conversation context.
  */
 export async function ragSearchPerPaper(
   query: string,
   paperUrl: string,
   paperTitle: string,
-  constellationId: string
+  constellationId: string,
+  chatHistory?: { role: "user" | "ai"; text: string }[]
 ): Promise<string> {
   const key = docKeyFromUrl(paperUrl);
   if (!key) {
@@ -205,39 +250,73 @@ export async function ragSearchPerPaper(
   }
 
   try {
-    const searchResult = await supermemoryRequest("/v3/search", "POST", withContainerTag({
-      q: query,
-      filters: {
-        AND: [
-          { filterType: "metadata", key: "doc_key", value: key },
-          { filterType: "array_contains", key: "constellation_ids", value: constellationId },
-        ],
-      },
-      limit: 5,
-    }));
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-    const chunks: string[] = (searchResult.results ?? []).flatMap(
-      (r: { chunks?: { content: string }[] }) =>
-        (r.chunks ?? []).map((c) => c.content)
-    );
+    const systemPrompt = `You are a research assistant helping a user understand the paper "${paperTitle}". You have access to a search_paper tool that retrieves relevant excerpts from this paper. Use it when you need specific information from the paper. If the user asks a follow-up question and you already have enough context from the conversation to answer, respond directly without searching.`;
+
+    // Build multi-turn contents
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contents: any[] = [
+      { role: "user", parts: [{ text: systemPrompt }] },
+      { role: "model", parts: [{ text: "Understood. I'll help answer questions about this paper, searching for specific information when needed." }] },
+    ];
+
+    // Append prior conversation turns (sliding window: last 10 messages)
+    if (chatHistory && chatHistory.length > 0) {
+      const recent = chatHistory.slice(-10);
+      for (const msg of recent) {
+        contents.push({
+          role: msg.role === "user" ? "user" : "model",
+          parts: [{ text: msg.text }],
+        });
+      }
+    }
+
+    // Append the current query
+    contents.push({ role: "user", parts: [{ text: query }] });
+
+    const config = { tools: [searchPaperTool] };
+
+    // First call: Gemini decides whether to search or answer directly
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents,
+      config,
+    });
+
+    // If Gemini returned text directly (no tool call), it answered from context
+    if (!response.functionCalls || response.functionCalls.length === 0) {
+      console.log("[supermemory] Gemini answered from conversation context (no tool call)");
+      return response.text?.trim() ?? "I couldn't generate an answer. Please try again.";
+    }
+
+    // Gemini wants to search the paper — execute the tool call
+    const toolCall = response.functionCalls[0];
+    const searchQuery = (toolCall.args as { query: string }).query;
+    console.log(`[supermemory] Gemini called search_paper("${searchQuery}")`);
+
+    const chunks = await searchPaperChunks(searchQuery, key, constellationId);
 
     if (chunks.length === 0 || chunks.every((c) => !c.trim())) {
       return `This paper may still be indexing. Try again in a moment, or ask a different question about "${paperTitle}".`;
     }
 
-    const context = chunks.join("\n\n---\n\n");
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `You are a research assistant. Answer the user's question based ONLY on the following excerpts from the paper "${paperTitle}". Be concise and accurate. If the excerpts don't contain enough information, say so.
+    const excerpts = chunks.join("\n\n---\n\n");
 
-Paper excerpts:
-${context}
-
-User question: ${query}`,
+    // Send the tool result back to Gemini for the final answer
+    contents.push(response.candidates![0].content);
+    contents.push({
+      role: "user",
+      parts: [{ functionResponse: { name: "search_paper", response: { excerpts } } }],
     });
 
-    return response.text?.trim() ?? "I couldn't generate an answer. Please try again.";
+    const finalResponse = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents,
+      config,
+    });
+
+    return finalResponse.text?.trim() ?? "I couldn't generate an answer. Please try again.";
   } catch (err) {
     console.error("[supermemory] ragSearchPerPaper failed:", err);
     return "Something went wrong while searching this paper. Please try again.";

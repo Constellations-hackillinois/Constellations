@@ -2150,7 +2150,10 @@ export default function ConstellationView({
                     pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
                   });
                   try {
-                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
+                    const history = pdfChatMessages
+                      .filter((m) => !m.loading && m.text)
+                      .map((m) => ({ role: m.role, text: m.text }));
+                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current, history);
                     setPdfChatMessages((prev) =>
                       prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
                     );
