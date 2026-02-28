@@ -366,6 +366,16 @@
   filter: brightness(1.4) drop-shadow(0 0 6px rgba(255, 255, 255, 0.15));
 }
 
+.draggingNode {
+  z-index: 4;
+  filter: brightness(1.55) drop-shadow(0 0 12px rgba(255, 255, 255, 0.24));
+  transition: none;
+}
+
+.draggingNode .starBody {
+  animation-play-state: paused;
+}
+
 .starBody {
   width: 26px;
   height: 26px;

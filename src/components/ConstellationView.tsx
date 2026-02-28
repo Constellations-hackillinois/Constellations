@@ -17,7 +17,8 @@ import {
   X,
 } from "lucide-react";
 import { followUpSearch, expandSearch } from "@/app/actions/search";
-import { storeDocument, ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
+import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
+import { ingestPaper } from "@/app/actions/pipeline";
 import {
   fetchConstellations as fetchConstellationsDB,
   upsertConstellation,
@@ -89,6 +90,7 @@ const BASE_RADIUS = 140;
 const RING_SPACING = 120;
 const MIN_NODE_DISTANCE = 55;
 const MAX_PLACEMENT_ATTEMPTS = 12;
+const NODE_DRAG_THRESHOLD = 6;
 
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -371,6 +373,12 @@ export default function ConstellationView({
     panAnimDuration: 800,
     zoomAnimFrom: 1.0,
     zoomTarget: 1.0,
+    draggedNodeId: null as number | null,
+    dragNodeStartX: 0,
+    dragNodeStartY: 0,
+    dragPointerStartClientX: 0,
+    dragPointerStartClientY: 0,
+    didDragNode: false,
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -462,6 +470,14 @@ export default function ConstellationView({
     stateRef.current.chatNodeId = null;
   }, []);
 
+  const clearChatTimers = useCallback(() => {
+    const s = stateRef.current;
+    if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
+    if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
+    s.chatShowTimer = null;
+    s.chatHideTimer = null;
+  }, []);
+
   const showChat = useCallback(
     (id: number) => {
       const s = stateRef.current;
@@ -489,6 +505,26 @@ export default function ConstellationView({
     },
     [toScreen, renderMessages]
   );
+
+  const openNodeSurface = useCallback((nodeId: number) => {
+    const node = stateRef.current.nodes.get(nodeId);
+    if (!node) return;
+
+    if (node.paperUrl) {
+      const canonical = toCanonicalArxivPdfUrl(node.paperUrl);
+      if (canonical) {
+        setPdfUrl(canonical);
+        setPdfPaperUrl(node.paperUrl);
+        setPdfTitle(node.paperTitle ?? node.label);
+        setPdfLoading(true);
+        setPdfChatMessages([]);
+        setPdfChatQuery("");
+        return;
+      }
+    }
+
+    showChat(nodeId);
+  }, [showChat]);
 
   const handleReturnToOrigin = useCallback(() => {
     const s = stateRef.current;
@@ -584,7 +620,7 @@ export default function ConstellationView({
         );
         child.paperTitle = pickedPaper.title;
         child.paperUrl = pickedPaper.url;
-        if (pickedPaper.url) storeDocument(pickedPaper.url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+        if (pickedPaper.url) ingestPaper(pickedPaper.url, pickedPaper.title, currentIdRef.current);
 
         child.el?.classList.add(styles.igniting);
         if (child.el) child.el.style.setProperty("--ignition-delay", "420ms");
@@ -815,31 +851,30 @@ export default function ConstellationView({
         el.appendChild(label);
       }
 
-      el.addEventListener("click", (e) => {
+      el.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
         e.stopPropagation();
-        const n = stateRef.current.nodes.get(node.id);
-        if (n?.paperUrl) {
-          const canonical = toCanonicalArxivPdfUrl(n.paperUrl);
-          if (canonical) {
-            setPdfUrl(canonical);
-            setPdfPaperUrl(n.paperUrl!);
-            setPdfTitle(n.paperTitle ?? n.label);
-            setPdfLoading(true);
-            setPdfChatMessages([]);
-            setPdfChatQuery("");
-            return;
-          }
-        }
-        showChat(node.id);
+        const current = stateRef.current;
+        current.panAnimating = false;
+        current.draggedNodeId = node.id;
+        current.dragNodeStartX = node.x;
+        current.dragNodeStartY = node.y;
+        current.dragPointerStartClientX = e.clientX;
+        current.dragPointerStartClientY = e.clientY;
+        current.didDragNode = false;
+        clearChatTimers();
       });
 
       el.addEventListener("mouseenter", () => {
+        if (stateRef.current.draggedNodeId !== null) return;
         if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
         if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
         s.chatShowTimer = setTimeout(() => showChat(node.id), 200);
       });
 
       el.addEventListener("mouseleave", () => {
+        if (stateRef.current.draggedNodeId !== null) return;
         if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
         s.chatHideTimer = setTimeout(hideChat, 150);
       });
@@ -848,7 +883,7 @@ export default function ConstellationView({
       node.el = el;
       updateNodePosition(node);
     },
-    [showChat, hideChat, updateNodePosition]
+    [clearChatTimers, showChat, hideChat, updateNodePosition]
   );
 
   const createNode = useCallback(
@@ -987,8 +1022,7 @@ export default function ConstellationView({
           child.paperTitle = papers[i].title;
           child.paperUrl = papers[i].url;
           if (papers[i].url) {
-            console.log("[client] calling storeDocument:", papers[i].url, currentIdRef.current);
-            storeDocument(papers[i].url, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+            ingestPaper(papers[i].url, papers[i].title, currentIdRef.current);
           }
 
           // Staged ignition: child materializes as beam approaches
@@ -1194,6 +1228,29 @@ export default function ConstellationView({
     }
 
     function handleMouseMove(e: MouseEvent) {
+      if (s.draggedNodeId !== null) {
+        const node = s.nodes.get(s.draggedNodeId);
+        if (!node) return;
+
+        const dx = e.clientX - s.dragPointerStartClientX;
+        const dy = e.clientY - s.dragPointerStartClientY;
+
+        if (!s.didDragNode) {
+          if (Math.hypot(dx, dy) < NODE_DRAG_THRESHOLD) return;
+          s.didDragNode = true;
+          s.panAnimating = false;
+          clearChatTimers();
+          hideChat();
+          node.el?.classList.add(styles.draggingNode);
+          document.body.style.cursor = "grabbing";
+        }
+
+        node.x = s.dragNodeStartX + dx / s.zoom;
+        node.y = s.dragNodeStartY + dy / s.zoom;
+        updateNodePosition(node);
+        return;
+      }
+
       if (!s.isDragging) return;
       s.panX = s.panStartX + (e.clientX - s.dragStartX);
       s.panY = s.panStartY + (e.clientY - s.dragStartY);
@@ -1201,6 +1258,28 @@ export default function ConstellationView({
     }
 
     function handleMouseUp() {
+      if (s.draggedNodeId !== null) {
+        const draggedNodeId = s.draggedNodeId;
+        const node = s.nodes.get(draggedNodeId);
+        const didDragNode = s.didDragNode;
+
+        node?.el?.classList.remove(styles.draggingNode);
+        s.draggedNodeId = null;
+        s.dragNodeStartX = 0;
+        s.dragNodeStartY = 0;
+        s.dragPointerStartClientX = 0;
+        s.dragPointerStartClientY = 0;
+        s.didDragNode = false;
+        document.body.style.cursor = "";
+
+        if (didDragNode) {
+          persistGraph();
+        } else {
+          openNodeSurface(draggedNodeId);
+        }
+        return;
+      }
+
       s.isDragging = false;
       document.body.style.cursor = "";
     }
@@ -1436,7 +1515,7 @@ export default function ConstellationView({
       if (paperTitle) originNode.paperTitle = paperTitle;
       if (paperUrl) {
         originNode.paperUrl = paperUrl;
-        storeDocument(paperUrl, currentIdRef.current).then(s => console.log("[supermemory]", s)).catch(e => console.error("[supermemory] error:", e));
+        ingestPaper(paperUrl, paperTitle || null, currentIdRef.current);
       }
     }
 

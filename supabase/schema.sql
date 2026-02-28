@@ -33,3 +33,24 @@ $$ language plpgsql;
 create trigger constellations_updated_at
   before update on constellations
   for each row execute function update_updated_at();
+
+-- Paper processing pipeline
+create table paper_documents (
+  id uuid primary key default gen_random_uuid(),
+  arxiv_id text unique not null,
+  paper_url text not null,
+  paper_title text,
+  status text not null default 'pending',  -- pending|downloading|extracting|converting|densifying|complete|failed
+  error_message text,
+  raw_text text,
+  markdown text,
+  densified_markdown text,
+  pdf_pages int,
+  word_count int,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create trigger paper_documents_updated_at
+  before update on paper_documents
+  for each row execute function update_updated_at();
