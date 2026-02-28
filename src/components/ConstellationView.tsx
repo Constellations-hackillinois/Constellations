@@ -274,6 +274,7 @@ export default function ConstellationView({
 
   const starCanvasRef = useRef<HTMLCanvasElement>(null);
   const edgeCanvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapCanvasRef = useRef<HTMLCanvasElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -831,6 +832,23 @@ export default function ConstellationView({
         clearChatTimers();
       });
 
+      el.addEventListener("mouseenter", () => {
+        if (stateRef.current.draggedNodeId !== null) return;
+        if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
+        s.chatHideTimer = null;
+        if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
+        s.chatShowTimer = setTimeout(() => showChat(node.id), 200);
+      });
+
+      el.addEventListener("mouseleave", () => {
+        if (stateRef.current.draggedNodeId !== null) return;
+        if (s.chatShowTimer) clearTimeout(s.chatShowTimer);
+        s.chatShowTimer = null;
+        if (!s.chatPinned) {
+          s.chatHideTimer = setTimeout(hideChat, 150);
+        }
+      });
+
       el.addEventListener("dblclick", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -841,7 +859,7 @@ export default function ConstellationView({
       node.el = el;
       updateNodePosition(node);
     },
-    [clearChatTimers, openNodeSurface, updateNodePosition]
+    [clearChatTimers, showChat, hideChat, openNodeSurface, updateNodePosition]
   );
 
   const createNode = useCallback(
@@ -1122,9 +1140,12 @@ export default function ConstellationView({
 
   // ─── Main effect: setup everything ───
   useEffect(() => {
+    const MINIMAP_W = 180;
+    const MINIMAP_H = 120;
     const s = stateRef.current;
     const starCanvas = starCanvasRef.current!;
     const edgeCanvas = edgeCanvasRef.current!;
+    const minimapCanvas = minimapCanvasRef.current;
     const starCtx = starCanvas.getContext("2d")!;
     const edgeCtx = edgeCanvas.getContext("2d")!;
     const chat = chatRef.current!;
@@ -1166,12 +1187,139 @@ export default function ConstellationView({
       starCanvas.height = h;
       edgeCanvas.width = w;
       edgeCanvas.height = h;
+      if (minimapCanvas) {
+        minimapCanvas.width = MINIMAP_W;
+        minimapCanvas.height = MINIMAP_H;
+      }
       initStars();
       updateAllPositions();
     }
 
+    function getMinimapBounds() {
+      let minX = 0, maxX = 0, minY = 0, maxY = 0;
+      let first = true;
+      s.nodes.forEach((n) => {
+        if (first) {
+          minX = maxX = n.x;
+          minY = maxY = n.y;
+          first = false;
+        } else {
+          minX = Math.min(minX, n.x);
+          maxX = Math.max(maxX, n.x);
+          minY = Math.min(minY, n.y);
+          maxY = Math.max(maxY, n.y);
+        }
+      });
+      const pad = 80;
+      const rangeX = Math.max(maxX - minX || 200, 200) + pad * 2;
+      const rangeY = Math.max(maxY - minY || 200, 200) + pad * 2;
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      minX = cx - rangeX / 2;
+      maxX = cx + rangeX / 2;
+      minY = cy - rangeY / 2;
+      maxY = cy + rangeY / 2;
+      return { minX, maxX, minY, maxY };
+    }
+
+    function drawMinimap() {
+      if (!minimapCanvas || s.nodes.size === 0) return;
+      const ctx = minimapCanvas.getContext("2d");
+      if (!ctx) return;
+
+      const { minX, maxX, minY, maxY } = getMinimapBounds();
+      const rangeX = maxX - minX;
+      const rangeY = maxY - minY;
+      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
+      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
+      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
+
+      const toMini = (lx: number, ly: number) => ({
+        x: ox + (lx - minX) * scale,
+        y: oy + (ly - minY) * scale,
+      });
+
+      ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
+      ctx.fillStyle = "rgba(6, 10, 20, 0.85)";
+      ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, MINIMAP_W - 1, MINIMAP_H - 1);
+
+      s.nodes.forEach((node) => {
+        if (node.parentId === null) return;
+        const par = s.nodes.get(node.parentId);
+        if (!par) return;
+        const anim = s.edgeAnims.find((a) => a.fromId === node.parentId && a.toId === node.id && a.progress < 1);
+        if (anim) return;
+        const cp = getEdgeCP(par, node);
+        const from = toMini(par.x, par.y);
+        const to = toMini(node.x, node.y);
+        const cps = toMini(cp.x, cp.y);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(cps.x, cps.y, to.x, to.y);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      });
+
+      s.nodes.forEach((node) => {
+        const p = toMini(node.x, node.y);
+        const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth >= 2 ? "rgba(199, 146, 234, 0.7)" : "rgba(126, 200, 227, 0.8)";
+        ctx.fill();
+      });
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const vpLeft = -(s.panX + w / 2) / s.zoom;
+      const vpTop = -(s.panY + h / 2) / s.zoom;
+      const vpW = w / s.zoom;
+      const vpH = h / s.zoom;
+      const vp = toMini(vpLeft, vpTop);
+      const vpScaleW = vpW * scale;
+      const vpScaleH = vpH * scale;
+      ctx.strokeStyle = "rgba(255, 216, 102, 0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(vp.x, vp.y, vpScaleW, vpScaleH);
+      ctx.fillStyle = "rgba(255, 216, 102, 0.08)";
+      ctx.fillRect(vp.x, vp.y, vpScaleW, vpScaleH);
+    }
+
+    function handleMinimapClick(e: MouseEvent) {
+      if (!minimapCanvas || s.nodes.size === 0) return;
+      const rect = minimapCanvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (mx < 0 || mx >= MINIMAP_W || my < 0 || my >= MINIMAP_H) return;
+
+      const { minX, maxX, minY, maxY } = getMinimapBounds();
+      const rangeX = maxX - minX;
+      const rangeY = maxY - minY;
+      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
+      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
+      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
+
+      const lx = minX + (mx - ox) / scale;
+      const ly = minY + (my - oy) / scale;
+
+      s.panAnimating = true;
+      s.panAnimFromX = s.panX;
+      s.panAnimFromY = s.panY;
+      s.panTargetX = -lx * s.zoom;
+      s.panTargetY = -ly * s.zoom;
+      s.zoomAnimFrom = s.zoom;
+      s.zoomTarget = s.zoom;
+      s.panAnimStart = performance.now();
+      s.panAnimDuration = 400;
+    }
+
     handleResize();
     window.addEventListener("resize", handleResize);
+    minimapCanvas?.addEventListener("click", handleMinimapClick);
 
     function handleMouseDown(e: MouseEvent) {
       if (
@@ -1179,7 +1327,8 @@ export default function ConstellationView({
         (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
         (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
         (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`) ||
-        (e.target as HTMLElement).closest(`.${styles.globalSearchShell}`)
+        (e.target as HTMLElement).closest(`.${styles.globalSearchShell}`) ||
+        (e.target as HTMLElement).closest(`.${styles.minimap}`)
       )
         return;
       s.panAnimating = false;
@@ -1310,7 +1459,18 @@ export default function ConstellationView({
     function chatMouseDown(e: MouseEvent) {
       e.stopPropagation();
     }
+    function chatEnter() {
+      if (s.chatHideTimer) clearTimeout(s.chatHideTimer);
+      s.chatHideTimer = null;
+    }
+    function chatLeave() {
+      if (!s.chatPinned) {
+        s.chatHideTimer = setTimeout(hideChat, 150);
+      }
+    }
     chat.addEventListener("mousedown", chatMouseDown);
+    chat.addEventListener("mouseenter", chatEnter);
+    chat.addEventListener("mouseleave", chatLeave);
 
     function drawStarField(time: number) {
       starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
@@ -1468,6 +1628,7 @@ export default function ConstellationView({
 
       drawStarField(time);
       drawEdges(time);
+      drawMinimap();
       s.animFrameId = requestAnimationFrame(frame);
     }
 
@@ -1537,6 +1698,9 @@ export default function ConstellationView({
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("wheel", handleWheel);
       chat.removeEventListener("mousedown", chatMouseDown);
+      chat.removeEventListener("mouseenter", chatEnter);
+      chat.removeEventListener("mouseleave", chatLeave);
+      minimapCanvas?.removeEventListener("click", handleMinimapClick);
       chatMessagesRootRef.current?.unmount();
       chatMessagesRootRef.current = null;
     };
@@ -1771,6 +1935,13 @@ export default function ConstellationView({
       <canvas ref={starCanvasRef} className={styles.starfield} />
       <div ref={glowRef} className={styles.mouseGlow} />
       <canvas ref={edgeCanvasRef} className={styles.edges} />
+      <canvas
+        ref={minimapCanvasRef}
+        className={styles.minimap}
+        width={180}
+        height={120}
+        title="Click to pan"
+      />
       <div ref={nodesRef} className={styles.nodesContainer} />
 
       <div ref={chatRef} className={styles.chatWindow}>
