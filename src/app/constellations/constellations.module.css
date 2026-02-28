@@ -1011,11 +1011,11 @@
 }
 
 .pdfPanel {
-  width: 70vw;
-  max-width: 1100px;
+  width: 92vw;
+  max-width: 1600px;
   height: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: rgba(8, 12, 24, 0.96);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -1034,6 +1034,14 @@
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+.pdfContent {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
 }
 
 .pdfHeader {
@@ -1092,6 +1100,133 @@
   background: #111;
 }
 
+/* ─── PDF Chat Panel ─── */
+.pdfChat {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(6, 10, 20, 0.5);
+  min-width: 0;
+}
+
+.pdfChatHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(199, 146, 234, 0.85);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.pdfChatMessages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pdfChatMessages::-webkit-scrollbar {
+  width: 3px;
+}
+
+.pdfChatMessages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.pdfChatEmpty {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  line-height: 1.7;
+}
+
+.pdfChatMsg {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--c-chat-text);
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.pdfChatUser {
+  background: rgba(126, 200, 227, 0.1);
+  align-self: flex-end;
+  max-width: 85%;
+  border-bottom-right-radius: 4px;
+}
+
+.pdfChatAi {
+  background: rgba(199, 146, 234, 0.07);
+  align-self: flex-start;
+  max-width: 90%;
+  border-bottom-left-radius: 4px;
+}
+
+.pdfChatThinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+}
+
+.pdfChatInputArea {
+  display: flex;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.pdfChatInput {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  color: var(--c-chat-text);
+  padding: 12px 14px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  transition: background 0.2s ease;
+}
+
+.pdfChatInput:focus {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pdfChatInput::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.pdfChatSend {
+  background: none;
+  border: none;
+  color: rgba(199, 146, 234, 0.6);
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.pdfChatSend:hover:not(:disabled) {
+  color: rgba(199, 146, 234, 0.95);
+  transform: scale(1.1);
+}
+
+.pdfChatSend:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .pdfLoading {
   position: absolute;
   inset: 0;
@@ -1126,5 +1261,17 @@
   .pdfPanel {
     width: 100vw;
     max-width: none;
+    flex-direction: column;
+  }
+
+  .pdfContent {
+    flex: 1;
+    min-height: 50%;
+  }
+
+  .pdfChat {
+    flex: 1;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 }

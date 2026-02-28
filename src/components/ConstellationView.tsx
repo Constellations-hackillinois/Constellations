@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, type FormEvent } from "react";
 import {
   BookOpen,
   Compass,
@@ -29,6 +29,13 @@ import {
   type SerializedGraph,
   type SerializedNode,
 } from "@/app/actions/constellations";
+
+interface PdfChatMessage {
+  id: string;
+  role: "user" | "ai";
+  text: string;
+  loading?: boolean;
+}
 import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
 import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
@@ -176,8 +183,15 @@ export default function ConstellationView({
   const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfPaperUrl, setPdfPaperUrl] = useState<string>("");
   const [pdfTitle, setPdfTitle] = useState<string>("");
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfChatMessages, setPdfChatMessages] = useState<PdfChatMessage[]>([]);
+  const [pdfChatLoading, setPdfChatLoading] = useState(false);
+  const [pdfChatQuery, setPdfChatQuery] = useState("");
+
+  const pdfChatMessagesRef = useRef<HTMLDivElement>(null);
+  const pdfChatInputRef = useRef<HTMLInputElement>(null);
 
   const currentIdRef = useRef("");
 
@@ -808,8 +822,11 @@ export default function ConstellationView({
           const canonical = toCanonicalArxivPdfUrl(n.paperUrl);
           if (canonical) {
             setPdfUrl(canonical);
+            setPdfPaperUrl(n.paperUrl!);
             setPdfTitle(n.paperTitle ?? n.label);
             setPdfLoading(true);
+            setPdfChatMessages([]);
+            setPdfChatQuery("");
             return;
           }
         }
@@ -1646,39 +1663,128 @@ export default function ConstellationView({
       {pdfUrl && (
         <div className={styles.pdfOverlay} onClick={() => setPdfUrl(null)}>
           <div className={styles.pdfPanel} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.pdfHeader}>
-              <span className={styles.pdfHeaderTitle}>{pdfTitle}</span>
-              <div className={styles.pdfHeaderActions}>
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.pdfOpenTab}
-                  title="Open in new tab"
-                >
-                  <ExternalLink size={14} aria-hidden="true" />
-                </a>
-                <button
-                  className={styles.pdfClose}
-                  onClick={() => setPdfUrl(null)}
-                  title="Close"
-                >
-                  <X size={16} aria-hidden="true" />
-                </button>
+            {/* ── PDF side ── */}
+            <div className={styles.pdfContent}>
+              <div className={styles.pdfHeader}>
+                <span className={styles.pdfHeaderTitle}>{pdfTitle}</span>
+                <div className={styles.pdfHeaderActions}>
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.pdfOpenTab}
+                    title="Open in new tab"
+                  >
+                    <ExternalLink size={14} aria-hidden="true" />
+                  </a>
+                  <button
+                    className={styles.pdfClose}
+                    onClick={() => setPdfUrl(null)}
+                    title="Close"
+                  >
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
+              {pdfLoading && (
+                <div className={styles.pdfLoading}>
+                  <div className={styles.pdfSpinner} />
+                  Loading paper…
+                </div>
+              )}
+              <iframe
+                className={styles.pdfIframe}
+                src={pdfUrl}
+                title={pdfTitle}
+                onLoad={() => setPdfLoading(false)}
+              />
             </div>
-            {pdfLoading && (
-              <div className={styles.pdfLoading}>
-                <div className={styles.pdfSpinner} />
-                Loading paper…
+
+            {/* ── RAG Chat side ── */}
+            <div className={styles.pdfChat}>
+              <div className={styles.pdfChatHeader}>
+                <BookOpen size={14} aria-hidden="true" />
+                Ask about this paper
               </div>
-            )}
-            <iframe
-              className={styles.pdfIframe}
-              src={pdfUrl}
-              title={pdfTitle}
-              onLoad={() => setPdfLoading(false)}
-            />
+              <div
+                ref={pdfChatMessagesRef}
+                className={styles.pdfChatMessages}
+              >
+                {pdfChatMessages.length === 0 ? (
+                  <div className={styles.pdfChatEmpty}>
+                    Ask any question about this paper. Answers are powered by the knowledge graph.
+                  </div>
+                ) : (
+                  pdfChatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`${styles.pdfChatMsg} ${msg.role === "user" ? styles.pdfChatUser : styles.pdfChatAi}`}
+                    >
+                      {msg.loading ? (
+                        <span className={styles.pdfChatThinking}>
+                          <div className={styles.pdfSpinner} style={{ width: 14, height: 14 }} />
+                          Thinking…
+                        </span>
+                      ) : (
+                        msg.text
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <form
+                className={styles.pdfChatInputArea}
+                onSubmit={async (e: FormEvent) => {
+                  e.preventDefault();
+                  const q = pdfChatQuery.trim();
+                  if (!q || pdfChatLoading) return;
+                  const userId = crypto.randomUUID();
+                  const aiId = crypto.randomUUID();
+                  setPdfChatQuery("");
+                  setPdfChatLoading(true);
+                  setPdfChatMessages((prev) => [
+                    ...prev,
+                    { id: userId, role: "user", text: q },
+                    { id: aiId, role: "ai", text: "", loading: true },
+                  ]);
+                  requestAnimationFrame(() => {
+                    pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
+                  });
+                  try {
+                    const answer = await ragSearchPerPaper(q, pdfPaperUrl, pdfTitle, currentIdRef.current);
+                    setPdfChatMessages((prev) =>
+                      prev.map((m) => m.id === aiId ? { ...m, text: answer, loading: false } : m)
+                    );
+                  } catch {
+                    setPdfChatMessages((prev) =>
+                      prev.map((m) => m.id === aiId ? { ...m, text: "Something went wrong. Please try again.", loading: false } : m)
+                    );
+                  } finally {
+                    setPdfChatLoading(false);
+                    requestAnimationFrame(() => {
+                      pdfChatMessagesRef.current?.scrollTo({ top: pdfChatMessagesRef.current.scrollHeight, behavior: "smooth" });
+                    });
+                  }
+                }}
+              >
+                <input
+                  ref={pdfChatInputRef}
+                  className={styles.pdfChatInput}
+                  type="text"
+                  placeholder="Ask about this paper…"
+                  autoComplete="off"
+                  value={pdfChatQuery}
+                  onChange={(e) => setPdfChatQuery(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className={styles.pdfChatSend}
+                  disabled={pdfChatLoading || !pdfChatQuery.trim()}
+                >
+                  <SendHorizontal size={15} aria-hidden="true" />
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
