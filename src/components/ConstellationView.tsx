@@ -1228,9 +1228,7 @@ export default function ConstellationView({
       ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
       ctx.fillStyle = "rgba(6, 10, 20, 0.85)";
       ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
-      ctx.strokeStyle = "rgba(255, 216, 102, 0.35)";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(0.5, 0.5, MINIMAP_W - 1, MINIMAP_H - 1);
+
 
       s.nodes.forEach((node) => {
         if (node.parentId === null) return;
