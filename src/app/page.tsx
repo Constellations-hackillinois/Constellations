@@ -7,14 +7,6 @@ import ConstellationSidebar from "@/components/ConstellationSidebar";
 import { normalizePaperTitle, normalizeRequiredTitle } from "@/lib/papers";
 import styles from "./home.module.css";
 
-const SUGGESTIONS = [
-  "Transformer architecture",
-  "CRISPR gene editing",
-  "Reinforcement learning",
-  "Quantum computing",
-  "Diffusion models",
-  "Graph neural networks",
-];
 
 function easeInCubic(t: number): number {
   return t * t * t;
@@ -265,26 +257,12 @@ export default function Home() {
                 transitionDelay: "100ms",
               }}
             >
-              Constellations
+              Constellation
             </h1>
-            <p
-              className={`mb-12 text-[15px] font-light tracking-wide text-white/30 transition-all duration-500 ${
-                phase === "collapsing" ? "opacity-0 -translate-y-6" : ""
-              }`}
-              style={{
-                letterSpacing: "0.04em",
-                opacity: mounted ? 1 : 0,
-                transform: mounted ? "translateY(0)" : "translateY(12px)",
-                transition: "opacity 700ms ease, transform 700ms ease",
-                transitionDelay: phase === "collapsing" ? "75ms" : "250ms",
-              }}
-            >
-              Explore the research universe, one paper at a time
-            </p>
 
             {/* Input bar */}
             <div
-              className="relative w-full max-w-[680px]"
+              className="relative w-full max-w-[680px] mt-5"
               style={{
                 height: 56,
                 opacity: mounted ? 1 : 0,
@@ -333,26 +311,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Suggestion chips */}
-            <div
-              className={`mt-6 flex flex-wrap justify-center gap-2.5 transition-all duration-500 ${
-                phase === "collapsing" ? "opacity-0 translate-y-4" : ""
-              }`}
-            >
-              {SUGGESTIONS.map((s, i) => (
-                <button
-                  key={s}
-                  onClick={() => setQuery(s)}
-                  disabled={phase !== "landing"}
-                  className={styles.suggestionChip}
-                  style={{
-                    animationDelay: mounted ? `${i * 60 + 400}ms` : "0ms",
-                  }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
           </div>
         </>
       )}

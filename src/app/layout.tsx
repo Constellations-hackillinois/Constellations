@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Constellations",
+  title: "Constellation",
   description: "Explore the research universe, one paper at a time",
 };
 
