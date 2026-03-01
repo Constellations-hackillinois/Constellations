@@ -457,6 +457,12 @@
     drop-shadow(0 0 6px var(--c-node-deep-glow)) drop-shadow(0 0 18px rgba(199, 146, 234, 0.22));
 }
 
+.tracePathNode .starBody {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.95) 32%, rgba(255, 255, 255, 0.35) 62%, transparent 100%);
+  filter:
+    drop-shadow(0 0 8px rgba(255, 255, 255, 0.55)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.3));
+}
+
 .starLabel {
   position: absolute;
   top: calc(100% + 10px);

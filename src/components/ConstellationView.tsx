@@ -374,6 +374,7 @@ export default function ConstellationView({
     dragPointerStartClientY: 0,
     didDragNode: false,
     showDaughterLabels: true,
+    traceNodeIds: new Set<number>(),
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -515,11 +516,15 @@ export default function ConstellationView({
     const s = stateRef.current;
     s.chatNodeId = null;
     s.chatPinned = false;
-    // Clear path-to-root highlights
-    s.highlights.forEach((_, nid) => {
+  }, []);
+
+  const clearPathTrace = useCallback(() => {
+    const s = stateRef.current;
+    s.traceNodeIds.forEach((nid) => {
       const n = s.nodes.get(nid);
-      if (n?.el) n.el.classList.remove(styles.highlighting);
+      n?.el?.classList.remove(styles.tracePathNode);
     });
+    s.traceNodeIds.clear();
     s.highlights.clear();
   }, []);
 
@@ -718,25 +723,23 @@ export default function ConstellationView({
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
 
-  const highlightPathToRoot = useCallback((id: number) => {
+  const tracePathToRoot = useCallback((id: number) => {
     const s = stateRef.current;
     const now = performance.now();
-    // Clear previous path highlights
-    s.highlights.forEach((_, nid) => {
-      const n = s.nodes.get(nid);
-      if (n?.el) n.el.classList.remove(styles.highlighting);
-    });
-    s.highlights.clear();
-    // Walk up from clicked node to root
+    // Replace prior click trace
+    clearPathTrace();
+
+    // Mark only path nodes in the highlight map so edge rendering can trace the path.
+    // Intentionally avoid node `.highlighting` class to keep click halo disabled.
     let current: ConstellationNode | undefined = s.nodes.get(id);
     while (current) {
       s.highlights.set(current.id, { startTime: now });
-      if (current.el) {
-        current.el.classList.add(styles.highlighting);
-      }
+      s.traceNodeIds.add(current.id);
+      current.el?.classList.add(styles.tracePathNode);
       current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
     }
-  }, []);
+
+  }, [clearPathTrace]);
 
   const highlightNodesByArxivIds = useCallback((ids: string[]) => {
     const s = stateRef.current;
@@ -1219,6 +1222,7 @@ export default function ConstellationView({
         // Clean up highlights
         for (const nid of toDelete) {
           s.highlights.delete(nid);
+          s.traceNodeIds.delete(nid);
         }
 
         // Persist to Supabase
@@ -1393,13 +1397,18 @@ export default function ConstellationView({
     minimapCanvas?.addEventListener("click", handleMinimapClick);
 
     function handleMouseDown(e: MouseEvent) {
+      const targetEl = e.target as HTMLElement;
+      if (!targetEl.closest(`.${styles.starNode}`)) {
+        clearPathTrace();
+      }
+
       if (
-        (e.target as HTMLElement).closest(`.${styles.starNode}`) ||
-        (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
-        (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
-        (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`) ||
-        (e.target as HTMLElement).closest(`.${styles.globalSearchShell}`) ||
-        (e.target as HTMLElement).closest(`.${styles.minimap}`)
+        targetEl.closest(`.${styles.starNode}`) ||
+        targetEl.closest(`.${styles.chatWindow}`) ||
+        targetEl.closest(`.${styles.sidebar}`) ||
+        targetEl.closest(`.${styles.returnToOrigin}`) ||
+        targetEl.closest(`.${styles.globalSearchShell}`) ||
+        targetEl.closest(`.${styles.minimap}`)
       )
         return;
       s.panAnimating = false;
@@ -1473,7 +1482,7 @@ export default function ConstellationView({
           persistGraph();
         } else {
           const current = stateRef.current;
-          highlightPathToRoot(draggedNodeId);
+          tracePathToRoot(draggedNodeId);
           if (current.chatPinned && current.chatNodeId === draggedNodeId) {
             hideChat();
           } else {
@@ -1597,8 +1606,8 @@ export default function ConstellationView({
         const cps = toScreen(cp.x, cp.y);
 
         const hl =
-          s.highlights.has(node.id) && s.highlights.has(node.parentId);
-        const hlEntry = hl ? s.highlights.get(node.id) : null;
+          (s.highlights.has(node.id) && s.highlights.has(node.parentId)) ||
+          (s.traceNodeIds.has(node.id) && s.traceNodeIds.has(node.parentId));
         let edgeAlpha = 0.42;
         if (hl) {
           edgeAlpha = 0.92;
@@ -1608,7 +1617,7 @@ export default function ConstellationView({
         edgeCtx.moveTo(from.x, from.y);
         edgeCtx.quadraticCurveTo(cps.x, cps.y, to.x, to.y);
         edgeCtx.strokeStyle = hl
-          ? `rgba(255,216,102,${edgeAlpha})`
+          ? `rgba(255,232,140,${edgeAlpha})`
           : `rgba(255,255,255,${edgeAlpha})`;
         edgeCtx.lineWidth = hl ? 2 : 1.2;
         edgeCtx.stroke();
