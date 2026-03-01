@@ -570,7 +570,8 @@
 }
 
 .highlighting {
-  animation: subtreeHighlight 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  filter: brightness(1.8) drop-shadow(0 0 10px var(--c-pulse-highlight));
+  transition: filter 0.3s ease;
 }
 
 /* Node collapse / deletion animation */

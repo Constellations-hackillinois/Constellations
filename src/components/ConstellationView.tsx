@@ -459,8 +459,15 @@ export default function ConstellationView({
 
   const hideChat = useCallback(() => {
     chatRef.current?.classList.remove(styles.visible);
-    stateRef.current.chatNodeId = null;
-    stateRef.current.chatPinned = false;
+    const s = stateRef.current;
+    s.chatNodeId = null;
+    s.chatPinned = false;
+    // Clear path-to-root highlights
+    s.highlights.forEach((_, nid) => {
+      const n = s.nodes.get(nid);
+      if (n?.el) n.el.classList.remove(styles.highlighting);
+    });
+    s.highlights.clear();
   }, []);
 
   const clearChatTimers = useCallback(() => {
@@ -470,6 +477,25 @@ export default function ConstellationView({
     s.chatShowTimer = null;
     s.chatHideTimer = null;
   }, []);
+
+  const updateChatPosition = useCallback(() => {
+    const s = stateRef.current;
+    if (s.chatNodeId === null) return;
+    const node = s.nodes.get(s.chatNodeId);
+    if (!node) return;
+    const chat = chatRef.current;
+    if (!chat) return;
+
+    const pos = toScreen(node.x, node.y);
+    let left = pos.x + 25;
+    let top = pos.y - 30;
+    if (left + 270 > window.innerWidth) left = pos.x - 285;
+    if (top + 310 > window.innerHeight) top = window.innerHeight - 320;
+    if (top < 10) top = 10;
+
+    chat.style.left = left + "px";
+    chat.style.top = top + "px";
+  }, [toScreen]);
 
   const showChat = useCallback(
     (id: number) => {
@@ -481,22 +507,14 @@ export default function ConstellationView({
       if (chatHeaderRef.current) chatHeaderRef.current.textContent = node.label;
       renderMessages(node);
 
-      const pos = toScreen(node.x, node.y);
-      let left = pos.x + 25;
-      let top = pos.y - 30;
-      if (left + 270 > window.innerWidth) left = pos.x - 285;
-      if (top + 310 > window.innerHeight) top = window.innerHeight - 320;
-      if (top < 10) top = 10;
-
       const chat = chatRef.current;
       if (chat) {
-        chat.style.left = left + "px";
-        chat.style.top = top + "px";
         chat.classList.add(styles.visible);
       }
+      updateChatPosition();
       chatInputRef.current?.focus();
     },
-    [toScreen, renderMessages]
+    [renderMessages, updateChatPosition]
   );
 
   const openNodeSurface = useCallback((nodeId: number) => {
@@ -645,6 +663,26 @@ export default function ConstellationView({
       }
     }
     setTimeout(() => s.highlights.clear(), 1000);
+  }, []);
+
+  const highlightPathToRoot = useCallback((id: number) => {
+    const s = stateRef.current;
+    const now = performance.now();
+    // Clear previous path highlights
+    s.highlights.forEach((_, nid) => {
+      const n = s.nodes.get(nid);
+      if (n?.el) n.el.classList.remove(styles.highlighting);
+    });
+    s.highlights.clear();
+    // Walk up from clicked node to root
+    let current: ConstellationNode | undefined = s.nodes.get(id);
+    while (current) {
+      s.highlights.set(current.id, { startTime: now });
+      if (current.el) {
+        current.el.classList.add(styles.highlighting);
+      }
+      current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
+    }
   }, []);
 
   const highlightNodesByArxivIds = useCallback((ids: string[]) => {
@@ -1373,6 +1411,7 @@ export default function ConstellationView({
           persistGraph();
         } else {
           const current = stateRef.current;
+          highlightPathToRoot(draggedNodeId);
           if (current.chatPinned && current.chatNodeId === draggedNodeId) {
             hideChat();
           } else {
@@ -1499,10 +1538,8 @@ export default function ConstellationView({
           s.highlights.has(node.id) && s.highlights.has(node.parentId);
         const hlEntry = hl ? s.highlights.get(node.id) : null;
         let edgeAlpha = 0.42;
-        if (hlEntry) {
-          const elapsed = time - hlEntry.startTime;
-          const t = Math.max(0, 1 - elapsed / 1000);
-          edgeAlpha = 0.42 + 0.5 * t;
+        if (hl) {
+          edgeAlpha = 0.92;
         }
 
         edgeCtx.beginPath();
@@ -1593,6 +1630,7 @@ export default function ConstellationView({
       drawStarField(time);
       drawEdges(time);
       drawMinimap();
+      updateChatPosition();
       s.animFrameId = requestAnimationFrame(frame);
     }
 
