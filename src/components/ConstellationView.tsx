@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { followUpSearch, expandSearch } from "@/app/actions/search";
+import { followUpSearch, expandSearch, type ExpandSearchResult } from "@/app/actions/search";
 import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
 import { ingestPaper } from "@/app/actions/pipeline";
 import {
@@ -59,6 +59,8 @@ interface ConstellationNode {
   paperTitle: string | null;
   paperUrl: string | null;
   expanding: boolean;
+  isFrontier: boolean;
+  frontierReason: string | null;
 }
 
 interface Star {
@@ -307,6 +309,7 @@ export default function ConstellationView({
         messages: node.messages.map((m) => ({ role: m.role, text: m.text, icon: m.icon })),
         paperTitle: node.paperTitle,
         paperUrl: node.paperUrl,
+        ...(node.isFrontier ? { isFrontier: true, frontierReason: node.frontierReason } : {}),
       });
     }
     return { nextId: s.nextId, nodes };
@@ -901,7 +904,9 @@ export default function ConstellationView({
       const el = document.createElement("div");
       let cls = styles.starNode;
       if (node.depth === 0) cls += " " + styles.depth0;
-      else if (node.depth >= 2) cls += " " + styles.depthDeep;
+      else if (node.depth === 2) cls += " " + styles.depth2;
+      else if (node.depth >= 3) cls += " " + styles.depthDeep;
+      if (node.isFrontier) cls += " " + styles.frontierNode;
       el.className = cls;
       el.dataset.nodeId = String(node.id);
 
@@ -985,6 +990,8 @@ export default function ConstellationView({
         paperTitle: null,
         paperUrl: null,
         expanding: false,
+        isFrontier: false,
+        frontierReason: null,
       };
 
       if (depth > 0) {
@@ -1050,6 +1057,10 @@ export default function ConstellationView({
         if (parent && parent.children.length > 0) highlightSubtree(id);
         return;
       }
+      if (parent.isFrontier) {
+        showChat(id);
+        return;
+      }
 
       parent.expanding = true;
       const pTitle = parent.paperTitle ?? parent.label;
@@ -1058,10 +1069,29 @@ export default function ConstellationView({
       if (parent.el) parent.el.style.opacity = "0.6";
 
       try {
-        const papers = await expandSearch(pUrl, pTitle);
+        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
 
         if (parent.el) parent.el.style.opacity = "1";
-        if (papers.length === 0) return;
+
+        if (frontier?.isFrontier) {
+          parent.isFrontier = true;
+          parent.frontierReason = frontier.reason;
+          parent.expanding = false;
+          if (parent.el) {
+            parent.el.classList.add(styles.frontierNode);
+            parent.el.classList.add(styles.frontierRevealing);
+            setTimeout(() => parent.el?.classList.remove(styles.frontierRevealing), 1200);
+          }
+          parent.messages.push({ role: "ai", text: `This paper is at the research frontier. ${frontier.reason}`, icon: "search" });
+          showChat(id);
+          flushGraph();
+          return;
+        }
+
+        if (papers.length === 0) {
+          parent.expanding = false;
+          return;
+        }
 
         // Parent emits a pulse
         parent.el?.classList.add(styles.spawning);
@@ -1355,7 +1385,7 @@ export default function ConstellationView({
         const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth >= 2 ? "rgba(199, 146, 234, 0.7)" : "rgba(126, 200, 227, 0.8)";
+        ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth === 1 ? "rgba(126, 200, 227, 0.8)" : node.depth === 2 ? "rgba(232, 148, 90, 0.7)" : "rgba(199, 146, 234, 0.7)";
         ctx.fill();
       });
     }
@@ -1714,6 +1744,8 @@ export default function ConstellationView({
           paperTitle: sn.paperTitle,
           paperUrl: sn.paperUrl,
           expanding: false,
+          isFrontier: sn.isFrontier ?? false,
+          frontierReason: sn.frontierReason ?? null,
         };
         s.nodes.set(node.id, node);
         createNodeElement(node);
