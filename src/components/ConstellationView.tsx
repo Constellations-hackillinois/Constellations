@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { followUpSearch, expandSearch } from "@/app/actions/search";
+import { followUpSearch, expandSearch, type ExpandSearchResult } from "@/app/actions/search";
 import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
 import { ingestPaper } from "@/app/actions/pipeline";
 import {
@@ -59,6 +59,8 @@ interface ConstellationNode {
   paperTitle: string | null;
   paperUrl: string | null;
   expanding: boolean;
+  isFrontier: boolean;
+  frontierReason: string | null;
 }
 
 interface Star {
@@ -288,8 +290,8 @@ export default function ConstellationView({
   const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const daughterLabelWidthChRef = useRef<number | null>(null);
-  const daughterLabelFontPxRef = useRef<number | null>(null);
+  const daughterLabelScaleBucketRef = useRef<number | null>(null);
+  const graphZoomRef = useRef<number | null>(null);
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -307,6 +309,7 @@ export default function ConstellationView({
         messages: node.messages.map((m) => ({ role: m.role, text: m.text, icon: m.icon })),
         paperTitle: node.paperTitle,
         paperUrl: node.paperUrl,
+        ...(node.isFrontier ? { isFrontier: true, frontierReason: node.frontierReason } : {}),
       });
     }
     return { nextId: s.nextId, nodes };
@@ -374,6 +377,7 @@ export default function ConstellationView({
     dragPointerStartClientY: 0,
     didDragNode: false,
     showDaughterLabels: true,
+    traceNodeIds: new Set<number>(),
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -393,32 +397,55 @@ export default function ConstellationView({
   const updateNodePosition = useCallback(
     (node: ConstellationNode) => {
       if (!node.el) return;
-      const pos = toScreen(node.x, node.y);
-      node.el.style.left = pos.x + "px";
-      node.el.style.top = pos.y + "px";
+      node.el.style.left = node.x + "px";
+      node.el.style.top = node.y + "px";
     },
-    [toScreen]
+    []
   );
 
-  const updateDaughterLabelWidthByZoom = useCallback(() => {
+  const updateDaughterLabelStyleByZoom = useCallback(() => {
     const container = nodesRef.current;
     if (!container) return;
 
     const zoom = Math.max(0.3, Math.min(3.0, stateRef.current.zoom));
-    const widthCh = Math.max(12, Math.min(28, Math.round(20 * Math.pow(zoom, 0.7))));
-    const fontPx = Math.max(8, Math.min(11, Number((9.5 * Math.pow(zoom, 0.35)).toFixed(2))));
-    if (daughterLabelWidthChRef.current === widthCh && daughterLabelFontPxRef.current === fontPx) return;
+    const graphZoom = Number(zoom.toFixed(3));
+    if (graphZoomRef.current !== graphZoom) {
+      graphZoomRef.current = graphZoom;
+      container.style.setProperty("--graph-zoom", String(graphZoom));
+    }
 
-    daughterLabelWidthChRef.current = widthCh;
-    daughterLabelFontPxRef.current = fontPx;
+    const bucket =
+      zoom >= 2.1 ? 7 :
+        zoom >= 1.7 ? 6 :
+          zoom >= 1.35 ? 5 :
+            zoom >= 1.1 ? 4 :
+              zoom >= 0.9 ? 3 :
+                zoom >= 0.72 ? 2 :
+                  zoom >= 0.56 ? 1 : 0;
+    if (daughterLabelScaleBucketRef.current === bucket) return;
+
+    daughterLabelScaleBucketRef.current = bucket;
+    const widthByBucket = [12, 14, 16, 18, 20, 23, 26, 28];
+    const fontByBucket = [7.8, 8.6, 9.6, 10.6, 11.4, 12.2, 12.8, 13.2];
+    const widthCh = widthByBucket[bucket];
+    const fontPx = fontByBucket[bucket];
     container.style.setProperty("--daughter-label-ch", String(widthCh));
     container.style.setProperty("--daughter-label-font-px", String(fontPx));
   }, []);
 
+  const updateViewportTransform = useCallback(() => {
+    const container = nodesRef.current;
+    if (!container) return;
+
+    const s = stateRef.current;
+    updateDaughterLabelStyleByZoom();
+    container.style.transform = `translate3d(${s.panX + cx()}px, ${s.panY + cy()}px, 0) scale(${s.zoom})`;
+  }, [cx, cy, updateDaughterLabelStyleByZoom]);
+
   const updateAllPositions = useCallback(() => {
-    updateDaughterLabelWidthByZoom();
+    updateViewportTransform();
     stateRef.current.nodes.forEach((n) => updateNodePosition(n));
-  }, [updateDaughterLabelWidthByZoom, updateNodePosition]);
+  }, [updateNodePosition, updateViewportTransform]);
 
   const applyDaughterLabelVisibility = useCallback((visible: boolean) => {
     const s = stateRef.current;
@@ -492,11 +519,15 @@ export default function ConstellationView({
     const s = stateRef.current;
     s.chatNodeId = null;
     s.chatPinned = false;
-    // Clear path-to-root highlights
-    s.highlights.forEach((_, nid) => {
+  }, []);
+
+  const clearPathTrace = useCallback(() => {
+    const s = stateRef.current;
+    s.traceNodeIds.forEach((nid) => {
       const n = s.nodes.get(nid);
-      if (n?.el) n.el.classList.remove(styles.highlighting);
+      n?.el?.classList.remove(styles.tracePathNode);
     });
+    s.traceNodeIds.clear();
     s.highlights.clear();
   }, []);
 
@@ -695,25 +726,23 @@ export default function ConstellationView({
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
 
-  const highlightPathToRoot = useCallback((id: number) => {
+  const tracePathToRoot = useCallback((id: number) => {
     const s = stateRef.current;
     const now = performance.now();
-    // Clear previous path highlights
-    s.highlights.forEach((_, nid) => {
-      const n = s.nodes.get(nid);
-      if (n?.el) n.el.classList.remove(styles.highlighting);
-    });
-    s.highlights.clear();
-    // Walk up from clicked node to root
+    // Replace prior click trace
+    clearPathTrace();
+
+    // Mark only path nodes in the highlight map so edge rendering can trace the path.
+    // Intentionally avoid node `.highlighting` class to keep click halo disabled.
     let current: ConstellationNode | undefined = s.nodes.get(id);
     while (current) {
       s.highlights.set(current.id, { startTime: now });
-      if (current.el) {
-        current.el.classList.add(styles.highlighting);
-      }
+      s.traceNodeIds.add(current.id);
+      current.el?.classList.add(styles.tracePathNode);
       current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
     }
-  }, []);
+
+  }, [clearPathTrace]);
 
   const highlightNodesByArxivIds = useCallback((ids: string[]) => {
     const s = stateRef.current;
@@ -878,7 +907,9 @@ export default function ConstellationView({
       const el = document.createElement("div");
       let cls = styles.starNode;
       if (node.depth === 0) cls += " " + styles.depth0;
-      else if (node.depth >= 2) cls += " " + styles.depthDeep;
+      else if (node.depth === 2) cls += " " + styles.depth2;
+      else if (node.depth >= 3) cls += " " + styles.depthDeep;
+      if (node.isFrontier) cls += " " + styles.frontierNode;
       el.className = cls;
       el.dataset.nodeId = String(node.id);
 
@@ -962,6 +993,8 @@ export default function ConstellationView({
         paperTitle: null,
         paperUrl: null,
         expanding: false,
+        isFrontier: false,
+        frontierReason: null,
       };
 
       if (depth > 0) {
@@ -1027,6 +1060,10 @@ export default function ConstellationView({
         if (parent && parent.children.length > 0) highlightSubtree(id);
         return;
       }
+      if (parent.isFrontier) {
+        showChat(id);
+        return;
+      }
 
       parent.expanding = true;
       const pTitle = parent.paperTitle ?? parent.label;
@@ -1035,10 +1072,29 @@ export default function ConstellationView({
       if (parent.el) parent.el.style.opacity = "0.6";
 
       try {
-        const papers = await expandSearch(pUrl, pTitle);
+        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
 
         if (parent.el) parent.el.style.opacity = "1";
-        if (papers.length === 0) return;
+
+        if (frontier?.isFrontier) {
+          parent.isFrontier = true;
+          parent.frontierReason = frontier.reason;
+          parent.expanding = false;
+          if (parent.el) {
+            parent.el.classList.add(styles.frontierNode);
+            parent.el.classList.add(styles.frontierRevealing);
+            setTimeout(() => parent.el?.classList.remove(styles.frontierRevealing), 1200);
+          }
+          parent.messages.push({ role: "ai", text: `This paper is at the research frontier. ${frontier.reason}`, icon: "search" });
+          showChat(id);
+          flushGraph();
+          return;
+        }
+
+        if (papers.length === 0) {
+          parent.expanding = false;
+          return;
+        }
 
         // Parent emits a pulse
         parent.el?.classList.add(styles.spawning);
@@ -1196,6 +1252,7 @@ export default function ConstellationView({
         // Clean up highlights
         for (const nid of toDelete) {
           s.highlights.delete(nid);
+          s.traceNodeIds.delete(nid);
         }
 
         // Persist to Supabase
@@ -1269,7 +1326,7 @@ export default function ConstellationView({
         minimapCanvas.height = MINIMAP_H;
       }
       initStars();
-      updateAllPositions();
+      updateViewportTransform();
     }
 
     function getViewportBounds() {
@@ -1332,7 +1389,7 @@ export default function ConstellationView({
         const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth >= 2 ? "rgba(199, 146, 234, 0.7)" : "rgba(126, 200, 227, 0.8)";
+        ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth === 1 ? "rgba(126, 200, 227, 0.8)" : node.depth === 2 ? "rgba(232, 148, 90, 0.7)" : "rgba(199, 146, 234, 0.7)";
         ctx.fill();
       });
     }
@@ -1370,13 +1427,18 @@ export default function ConstellationView({
     minimapCanvas?.addEventListener("click", handleMinimapClick);
 
     function handleMouseDown(e: MouseEvent) {
+      const targetEl = e.target as HTMLElement;
+      if (!targetEl.closest(`.${styles.starNode}`)) {
+        clearPathTrace();
+      }
+
       if (
-        (e.target as HTMLElement).closest(`.${styles.starNode}`) ||
-        (e.target as HTMLElement).closest(`.${styles.chatWindow}`) ||
-        (e.target as HTMLElement).closest(`.${styles.sidebar}`) ||
-        (e.target as HTMLElement).closest(`.${styles.returnToOrigin}`) ||
-        (e.target as HTMLElement).closest(`.${styles.globalSearchShell}`) ||
-        (e.target as HTMLElement).closest(`.${styles.minimap}`)
+        targetEl.closest(`.${styles.starNode}`) ||
+        targetEl.closest(`.${styles.chatWindow}`) ||
+        targetEl.closest(`.${styles.sidebar}`) ||
+        targetEl.closest(`.${styles.returnToOrigin}`) ||
+        targetEl.closest(`.${styles.globalSearchShell}`) ||
+        targetEl.closest(`.${styles.minimap}`)
       )
         return;
       s.panAnimating = false;
@@ -1428,7 +1490,7 @@ export default function ConstellationView({
       if (!s.isDragging) return;
       s.panX = s.panStartX + (e.clientX - s.dragStartX);
       s.panY = s.panStartY + (e.clientY - s.dragStartY);
-      updateAllPositions();
+      updateViewportTransform();
     }
 
     function handleMouseUp() {
@@ -1450,7 +1512,7 @@ export default function ConstellationView({
           persistGraph();
         } else {
           const current = stateRef.current;
-          highlightPathToRoot(draggedNodeId);
+          tracePathToRoot(draggedNodeId);
           if (current.chatPinned && current.chatNodeId === draggedNodeId) {
             hideChat();
           } else {
@@ -1489,7 +1551,7 @@ export default function ConstellationView({
       s.panX = mx - (mx - s.panX) * (s.zoom / oldZoom);
       s.panY = my - (my - s.panY) * (s.zoom / oldZoom);
 
-      updateAllPositions();
+      updateViewportTransform();
     }
 
 
@@ -1577,8 +1639,8 @@ export default function ConstellationView({
         const cps = toScreen(cp.x, cp.y);
 
         const hl =
-          s.highlights.has(node.id) && s.highlights.has(node.parentId);
-        const hlEntry = hl ? s.highlights.get(node.id) : null;
+          (s.highlights.has(node.id) && s.highlights.has(node.parentId)) ||
+          (s.traceNodeIds.has(node.id) && s.traceNodeIds.has(node.parentId));
         let edgeAlpha = 0.42;
         if (hl) {
           edgeAlpha = 0.92;
@@ -1588,7 +1650,7 @@ export default function ConstellationView({
         edgeCtx.moveTo(from.x, from.y);
         edgeCtx.quadraticCurveTo(cps.x, cps.y, to.x, to.y);
         edgeCtx.strokeStyle = hl
-          ? `rgba(255,216,102,${edgeAlpha})`
+          ? `rgba(255,232,140,${edgeAlpha})`
           : `rgba(255,255,255,${edgeAlpha})`;
         edgeCtx.lineWidth = hl ? 2 : 1.2;
         edgeCtx.stroke();
@@ -1657,7 +1719,7 @@ export default function ConstellationView({
         s.panX = s.panAnimFromX + (s.panTargetX - s.panAnimFromX) * e;
         s.panY = s.panAnimFromY + (s.panTargetY - s.panAnimFromY) * e;
         s.zoom = s.zoomAnimFrom + (s.zoomTarget - s.zoomAnimFrom) * e;
-        updateAllPositions();
+        updateViewportTransform();
         if (t >= 1) s.panAnimating = false;
       }
 
@@ -1694,6 +1756,8 @@ export default function ConstellationView({
           paperTitle: sn.paperTitle,
           paperUrl: sn.paperUrl,
           expanding: false,
+          isFrontier: sn.isFrontier ?? false,
+          frontierReason: sn.frontierReason ?? null,
         };
         s.nodes.set(node.id, node);
         createNodeElement(node);

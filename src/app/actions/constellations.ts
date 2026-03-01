@@ -41,6 +41,8 @@ export interface SerializedNode {
   messages: { role: "user" | "ai"; text: string; icon?: "bookOpen" | "search" }[];
   paperTitle: string | null;
   paperUrl: string | null;
+  isFrontier?: boolean;
+  frontierReason?: string | null;
 }
 
 export interface SerializedGraph {

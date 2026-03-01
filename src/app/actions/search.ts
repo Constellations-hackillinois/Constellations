@@ -16,6 +16,16 @@ export interface PickedPaper {
     url: string;
 }
 
+export interface FrontierEvaluation {
+    isFrontier: boolean;
+    reason: string;
+}
+
+export interface ExpandSearchResult {
+    papers: PickedPaper[];
+    frontier: FrontierEvaluation | null;
+}
+
 function normalizeTitle(title: string): string {
     return title.trim().toLowerCase();
 }
@@ -235,8 +245,9 @@ export async function searchTopicWithPaper(
 
 export async function expandSearch(
     paperUrl: string,
-    paperTitle: string
-): Promise<PickedPaper[]> {
+    paperTitle: string,
+    constellationId?: string
+): Promise<ExpandSearchResult> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const exa = new Exa(process.env.EXA_API_KEY);
     const canonicalPaperUrl = toCanonicalArxivPdfUrl(paperUrl) ?? paperUrl;
@@ -281,7 +292,7 @@ Generate a single, broad search query to find 3-5 closely related academic paper
     const results = normalizeSearchResults(searchResp.results, [canonicalPaperUrl]);
 
     // 4. Ask Gemini to pick the 3-5 most relevant distinct papers
-    if (results.length === 0) return [];
+    if (results.length === 0) return { papers: [], frontier: null };
 
     const listText = results
         .map(
@@ -317,12 +328,118 @@ Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No ex
                 if (matched.length === 5) break;
             }
 
-            if (matched.length > 0) return matched;
+            if (matched.length > 0) {
+                // Frontier evaluation
+                try {
+                    const frontier = await evaluateFrontier(paperContext, matched, results, constellationId);
+                    if (frontier.isFrontier) {
+                        return { papers: [], frontier };
+                    }
+                    return { papers: matched, frontier: null };
+                } catch (err) {
+                    console.warn("[expand] frontier eval failed, proceeding normally:", err);
+                    return { papers: matched, frontier: null };
+                }
+            }
         }
     } catch {
         console.warn("[expand] JSON parse failed, returning first 3 results");
     }
-    return results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
+    const fallback = results.slice(0, 3).map((r) => ({ title: r.title, url: r.url }));
+    return { papers: fallback, frontier: null };
+}
+
+async function evaluateFrontier(
+    parentPaperContext: string,
+    pickedPapers: PickedPaper[],
+    fullResults: SearchResult[],
+    constellationId?: string
+): Promise<FrontierEvaluation> {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    // Get richer parent context from Supermemory if we have a constellation
+    let enrichedParentContext = parentPaperContext;
+    if (constellationId) {
+        try {
+            const parentTitle = parentPaperContext.match(/Paper title: "(.+?)"/)?.[1] ?? "";
+            const parentUrl = parentPaperContext.match(/https?:\/\/[^\s"]+/)?.[0] ?? "";
+            if (parentTitle && parentUrl) {
+                const chunks = await fetchPaperExcerpts(parentTitle, parentUrl, constellationId);
+                if (chunks.length > 0) {
+                    enrichedParentContext += "\n\nAdditional excerpts from parent paper:\n" + chunks.join("\n\n---\n\n").slice(0, 2000);
+                }
+            }
+        } catch {
+            // Fall through with basic context
+        }
+    }
+
+    // Build candidate context from Exa highlights already in fullResults
+    const candidateContext = pickedPapers.map((p) => {
+        const full = fullResults.find((r) => r.url === p.url);
+        return `- "${p.title}": ${full?.text?.slice(0, 300) ?? "No excerpt available"}`;
+    }).join("\n");
+
+    const prompt = `You are a research frontier evaluation agent. Given a parent paper and its candidate successor papers, assess whether the candidates represent genuine research advances or merely incremental extensions.
+
+<parent_paper>
+${enrichedParentContext}
+</parent_paper>
+
+<candidate_papers>
+${candidateContext}
+</candidate_papers>
+
+Score each candidate on these 8 dimensions (1-10 scale):
+1. **Contribution type**: 1 = stronger implementation of existing idea, 10 = entirely new capability/theory/method
+2. **Distance from prior work**: 1 = marginal improvement, 10 = solves previously unsolvable problem, opens new direction
+3. **Fundamentality**: 1 = hyperparameter tuning/scaling/obvious combo, 10 = result matters even after implementation details age out
+4. **Community impact**: 1 = ignorable by peers, 10 = other researchers must respond to it
+5. **Surprise factor**: 1 = experts would say "of course", 10 = experts would say "that shouldn't work"
+6. **Evidence robustness**: 1 = no baselines/narrow eval, 10 = strong ablations/reproducible/generalizes
+7. **Insight vs resources**: 1 = just more compute/data, 10 = genuine conceptual breakthrough
+8. **New capabilities**: 1 = benchmark score +0.7, 10 = qualitatively new behavior or task class
+
+Classification based on average score:
+- NOT_FRONTIER: avg < 5.0 — competent incremental extension
+- POSSIBLY_FRONTIER: avg 5.0–7.0 — meaningful improvement or clever reframing
+- CLEARLY_FRONTIER: avg > 7.0 — changes what researchers think is possible
+
+CRITICAL: The parent paper is at the research frontier ONLY when ALL candidates are NOT_FRONTIER (avg < 5.0 for every candidate). Even one POSSIBLY_FRONTIER candidate means the parent has meaningful successors.
+
+Reply with ONLY a JSON object (no markdown fences, no explanation):
+{
+  "assessments": [
+    {
+      "title": "Paper Title",
+      "scores": { "contribution": N, "distance": N, "fundamental": N, "impact": N, "surprise": N, "evidence": N, "insight": N, "capabilities": N },
+      "avg": N.N,
+      "classification": "NOT_FRONTIER|POSSIBLY_FRONTIER|CLEARLY_FRONTIER",
+      "reasoning": "1-2 sentences"
+    }
+  ],
+  "parentIsFrontier": true/false,
+  "reason": "1-2 sentence user-facing explanation of why the parent is or isn't at the frontier"
+}`;
+
+    const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+    });
+
+    const raw = response.text?.trim() ?? "";
+    console.log("[expand] frontier eval raw:", raw);
+
+    const parsed = JSON.parse(raw) as {
+        assessments: { title: string; avg: number; classification: string; reasoning: string }[];
+        parentIsFrontier: boolean;
+        reason: string;
+    };
+
+    return {
+        isFrontier: parsed.parentIsFrontier,
+        reason: parsed.reason,
+    };
 }
 
 async function pickBestPaperWithContext(
