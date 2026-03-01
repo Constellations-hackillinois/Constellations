@@ -1609,7 +1609,7 @@ export default function ConstellationView({
       updateViewportTransform();
     }
 
-    function handleMouseUp() {
+    function handleMouseUp(e: MouseEvent) {
       if (s.draggedNodeId !== null) {
         const draggedNodeId = s.draggedNodeId;
         const node = s.nodes.get(draggedNodeId);
@@ -1628,6 +1628,10 @@ export default function ConstellationView({
           persistGraph();
         } else {
           const current = stateRef.current;
+          if (e.metaKey && node && node.depth > 0) {
+            deleteNodeCascade(draggedNodeId);
+            return;
+          }
           tracePathToRoot(draggedNodeId);
           if (current.chatPinned && current.chatNodeId === draggedNodeId) {
             hideChat();
@@ -2244,20 +2248,6 @@ export default function ConstellationView({
             }}
           >
             <Plus size={13} aria-hidden="true" />
-          </button>
-          <button
-            className={styles.chatDeleteBtn}
-            title="Delete this node and its branches"
-            aria-label="Delete this node and its branches"
-            onClick={() => {
-              const id = stateRef.current.chatNodeId;
-              if (id !== null) {
-                const node = stateRef.current.nodes.get(id);
-                if (node && node.depth > 0) deleteNodeCascade(id);
-              }
-            }}
-          >
-            <Trash2 size={13} aria-hidden="true" />
           </button>
         </div>
       </div>
