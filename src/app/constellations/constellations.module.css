@@ -553,7 +553,7 @@
   transition: opacity 0.3s ease;
 }
 
-.starNode:not(.depth0) .starLabel {
+.starNode .starLabel {
   width: min(calc(var(--daughter-label-ch, 20) * 1ch), 50vw);
   font-size: calc(var(--daughter-label-font-px, 13.2) * 1px);
   transform: translateX(-50%) scale(calc(1 / var(--graph-zoom, 1)));
