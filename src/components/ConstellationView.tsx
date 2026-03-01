@@ -384,6 +384,7 @@ export default function ConstellationView({
     showDaughterLabels: true,
     traceNodeIds: new Set<number>(),
     generationTraceNodeIds: new Set<number>(),
+    generationTraceNodeRefCounts: new Map<number, number>(),
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -475,26 +476,38 @@ export default function ConstellationView({
     s.highlights.clear();
   }, []);
 
-  const clearGenerationTrace = useCallback(() => {
+  const beginGenerationTrace = useCallback((id: number) => {
     const s = stateRef.current;
-    s.generationTraceNodeIds.forEach((nid) => {
-      const n = s.nodes.get(nid);
-      n?.el?.classList.remove(styles.generationTraceNode);
-    });
-    s.generationTraceNodeIds.clear();
-  }, []);
-
-  const traceGenerationPathToRoot = useCallback((id: number) => {
-    const s = stateRef.current;
-    clearGenerationTrace();
-
+    const pathNodeIds: number[] = [];
     let current: ConstellationNode | undefined = s.nodes.get(id);
     while (current) {
-      s.generationTraceNodeIds.add(current.id);
-      current.el?.classList.add(styles.generationTraceNode);
+      pathNodeIds.push(current.id);
+      const prevCount = s.generationTraceNodeRefCounts.get(current.id) ?? 0;
+      const nextCount = prevCount + 1;
+      s.generationTraceNodeRefCounts.set(current.id, nextCount);
+      if (prevCount === 0) {
+        s.generationTraceNodeIds.add(current.id);
+        current.el?.classList.add(styles.generationTraceNode);
+      }
       current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
     }
-  }, [clearGenerationTrace]);
+
+    return () => {
+      const currentState = stateRef.current;
+      for (const nid of pathNodeIds) {
+        const count = currentState.generationTraceNodeRefCounts.get(nid);
+        if (!count) continue;
+        if (count === 1) {
+          currentState.generationTraceNodeRefCounts.delete(nid);
+          currentState.generationTraceNodeIds.delete(nid);
+          const node = currentState.nodes.get(nid);
+          node?.el?.classList.remove(styles.generationTraceNode);
+        } else {
+          currentState.generationTraceNodeRefCounts.set(nid, count - 1);
+        }
+      }
+    };
+  }, []);
 
   const hideChat = useCallback(() => {
     chatRef.current?.classList.remove(styles.visible);
@@ -658,7 +671,7 @@ export default function ConstellationView({
     if (input) input.value = "";
 
     const parentNodeId = node.id;
-    traceGenerationPathToRoot(parentNodeId);
+    const endGenerationTrace = beginGenerationTrace(parentNodeId);
     node.el?.classList.add(styles.followUpLoading);
 
     try {
@@ -717,9 +730,9 @@ export default function ConstellationView({
       flushGraph();
     } finally {
       node.el?.classList.remove(styles.followUpLoading);
-      clearGenerationTrace();
+      endGenerationTrace();
     }
-  }, [clearGenerationTrace, flushGraph, traceGenerationPathToRoot]);
+  }, [beginGenerationTrace, flushGraph]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -1084,13 +1097,13 @@ export default function ConstellationView({
       const pTitle = parent.paperTitle ?? parent.label;
       const pUrl = parent.paperUrl ?? "";
 
-      traceGenerationPathToRoot(id);
+      const endGenerationTrace = beginGenerationTrace(id);
       if (parent.el) {
         parent.el.classList.add(styles.followUpLoading);
       }
 
       try {
-        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
+        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current, parent.depth);
 
         if (frontier?.isFrontier) {
           parent.isFrontier = true;
@@ -1191,10 +1204,10 @@ export default function ConstellationView({
         if (parent.el) {
           parent.el.classList.remove(styles.followUpLoading);
         }
-        clearGenerationTrace();
+        endGenerationTrace();
       }
     },
-    [clearGenerationTrace, flushGraph, highlightSubtree, traceGenerationPathToRoot]
+    [beginGenerationTrace, flushGraph, highlightSubtree]
   );
 
   expandNodeRef.current = expandNode;
@@ -1272,6 +1285,7 @@ export default function ConstellationView({
           s.highlights.delete(nid);
           s.traceNodeIds.delete(nid);
           s.generationTraceNodeIds.delete(nid);
+          s.generationTraceNodeRefCounts.delete(nid);
         }
 
         // Persist to Supabase
@@ -1358,25 +1372,49 @@ export default function ConstellationView({
       return { minX, maxX, minY, maxY };
     }
 
-    function drawMinimap() {
-      if (!minimapCanvas || s.nodes.size === 0) return;
-      const ctx = minimapCanvas.getContext("2d");
-      if (!ctx) return;
+    function getMinimapProjection() {
+      const viewport = getViewportBounds();
+      let minX = viewport.minX;
+      let maxX = viewport.maxX;
+      let minY = viewport.minY;
+      let maxY = viewport.maxY;
 
-      const { minX, maxX, minY, maxY } = getViewportBounds();
-      const rangeX = maxX - minX;
-      const rangeY = maxY - minY;
-      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
-      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
-      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
+      s.nodes.forEach((node) => {
+        minX = Math.min(minX, node.x);
+        maxX = Math.max(maxX, node.x);
+        minY = Math.min(minY, node.y);
+        maxY = Math.max(maxY, node.y);
+      });
+
+      const worldPadding = 80;
+      minX -= worldPadding;
+      maxX += worldPadding;
+      minY -= worldPadding;
+      maxY += worldPadding;
+
+      const rangeX = Math.max(maxX - minX, 1);
+      const rangeY = Math.max(maxY - minY, 1);
+      const minimapPadding = 6;
+      const contentW = MINIMAP_W - minimapPadding * 2;
+      const contentH = MINIMAP_H - minimapPadding * 2;
+      const scale = Math.min(contentW / rangeX, contentH / rangeY);
+      const ox = minimapPadding + (contentW - rangeX * scale) / 2;
+      const oy = minimapPadding + (contentH - rangeY * scale) / 2;
 
       const toMini = (lx: number, ly: number) => ({
         x: ox + (lx - minX) * scale,
         y: oy + (ly - minY) * scale,
       });
 
-      const inView = (x: number, y: number) =>
-        x >= minX && x <= maxX && y >= minY && y <= maxY;
+      return { minX, maxX, minY, maxY, scale, ox, oy, toMini, viewport };
+    }
+
+    function drawMinimap() {
+      if (!minimapCanvas) return;
+      const ctx = minimapCanvas.getContext("2d");
+      if (!ctx) return;
+
+      const { toMini, viewport } = getMinimapProjection();
 
       ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
       ctx.fillStyle = "rgba(6, 10, 20, 0.85)";
@@ -1387,7 +1425,6 @@ export default function ConstellationView({
         if (node.parentId === null) return;
         const par = s.nodes.get(node.parentId);
         if (!par) return;
-        if (!inView(par.x, par.y) && !inView(node.x, node.y)) return;
         const anim = s.edgeAnims.find((a) => a.fromId === node.parentId && a.toId === node.id && a.progress < 1);
         if (anim) return;
         const cp = getEdgeCP(par, node);
@@ -1403,7 +1440,6 @@ export default function ConstellationView({
       });
 
       s.nodes.forEach((node) => {
-        if (!inView(node.x, node.y)) return;
         const p = toMini(node.x, node.y);
         const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
         ctx.beginPath();
@@ -1411,24 +1447,36 @@ export default function ConstellationView({
         ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth === 1 ? "rgba(126, 200, 227, 0.8)" : node.depth === 2 ? "rgba(232, 148, 90, 0.7)" : "rgba(199, 146, 234, 0.7)";
         ctx.fill();
       });
+
+      const topLeft = toMini(viewport.minX, viewport.minY);
+      const bottomRight = toMini(viewport.maxX, viewport.maxY);
+      const viewX = Math.min(topLeft.x, bottomRight.x);
+      const viewY = Math.min(topLeft.y, bottomRight.y);
+      const viewW = Math.abs(bottomRight.x - topLeft.x);
+      const viewH = Math.abs(bottomRight.y - topLeft.y);
+      if (viewW > 0 && viewH > 0) {
+        const radius = Math.min(5, viewW / 2, viewH / 2);
+        ctx.beginPath();
+        if (typeof ctx.roundRect === "function") {
+          ctx.roundRect(viewX, viewY, viewW, viewH, radius);
+        } else {
+          ctx.rect(viewX, viewY, viewW, viewH);
+        }
+        ctx.fillStyle = "rgba(165, 165, 165, 0.28)";
+        ctx.fill();
+      }
     }
 
     function handleMinimapClick(e: MouseEvent) {
-      if (!minimapCanvas || s.nodes.size === 0) return;
+      if (!minimapCanvas) return;
       const rect = minimapCanvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       if (mx < 0 || mx >= MINIMAP_W || my < 0 || my >= MINIMAP_H) return;
 
-      const { minX, maxX, minY, maxY } = getViewportBounds();
-      const rangeX = maxX - minX;
-      const rangeY = maxY - minY;
-      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
-      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
-      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
-
-      const lx = minX + (mx - ox) / scale;
-      const ly = minY + (my - oy) / scale;
+      const { minX, maxX, minY, maxY, scale, ox, oy } = getMinimapProjection();
+      const lx = Math.max(minX, Math.min(maxX, minX + (mx - ox) / scale));
+      const ly = Math.max(minY, Math.min(maxY, minY + (my - oy) / scale));
 
       s.panAnimating = true;
       s.panAnimFromX = s.panX;

@@ -79,10 +79,12 @@ function matchPickedPaper(
 
 async function rewriteQuery(userQuery: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const t0 = performance.now();
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Given the following research topic, generate a single web search query specifically aimed at finding the most foundational or seminal academic paper on this subject. The query should target the original, landmark paper that established or defined the field. Return only the search query with no explanation or extra text.\n\nResearch topic: ${userQuery}`,
     });
+    console.log(`[gemini] rewriteQuery took ${(performance.now() - t0).toFixed(0)}ms`);
     return response.text?.trim() ?? userQuery;
 }
 
@@ -101,6 +103,7 @@ async function pickBestPaper(
         )
         .join("\n\n");
 
+    const t0 = performance.now();
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `You are a research assistant. Given the user's research topic and a list of academic papers returned by a search engine, pick the single most relevant and foundational paper.
@@ -112,6 +115,7 @@ ${listText}
 
 Reply with ONLY a JSON object with two keys: "title" and "url". No explanation, no markdown fences, just raw JSON.`,
     });
+    console.log(`[gemini] pickBestPaper took ${(performance.now() - t0).toFixed(0)}ms`);
 
     const raw = response.text?.trim() ?? "";
     console.log("[search] pickBestPaper raw response:", raw);
@@ -186,10 +190,12 @@ export async function resolveUrlToPaper(
         const excerpt = highlights.join(" ") || "";
 
         // Ask Gemini to derive a research topic from the page content
+        const t0 = performance.now();
         const topicResp = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             contents: `Given this article, extract the core research topic in 2-5 words. Return ONLY the topic, nothing else.\n\nTitle: ${pageTitle}\nExcerpt: ${excerpt}`,
         });
+        console.log(`[gemini] resolveUrl extractTopic took ${(performance.now() - t0).toFixed(0)}ms`);
         const topic = topicResp.text?.trim() ?? pageTitle;
 
         // Search for a related arXiv paper
@@ -246,7 +252,8 @@ export async function searchTopicWithPaper(
 export async function expandSearch(
     paperUrl: string,
     paperTitle: string,
-    constellationId?: string
+    constellationId?: string,
+    depth?: number
 ): Promise<ExpandSearchResult> {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const exa = new Exa(process.env.EXA_API_KEY);
@@ -268,14 +275,24 @@ export async function expandSearch(
         : `Paper title: "${paperTitle}"`;
 
     // 2. Ask Gemini to generate a search query for related/cited papers
+    const depthGuidance = depth !== undefined && depth <= 1
+        ? "Find broad, foundational papers — survey papers, seminal/classic works, and accessible overviews. Avoid niche follow-ups or highly specialized extensions."
+        : depth === 2
+            ? "Find important related papers that explore key branches and subtopics of this area. Prefer well-known papers over obscure ones."
+            : "Find the most important related academic papers — papers it cites, papers that cite it, or papers exploring similar ideas.";
+
+    const t0 = performance.now();
     const refineResp = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `You are a research assistant. Given a paper, generate a single search query that will find the most important related academic papers — papers it cites, papers that cite it, or papers exploring similar ideas.
+        contents: `You are a research assistant. Given a paper, generate a single search query that will find related academic papers.
+
+Guidance: ${depthGuidance}
 
 ${paperContext}
 
-Generate a single, broad search query to find 3-5 closely related academic papers. Return ONLY the search query, no explanation.`,
+Generate a single, broad search query to find closely related academic papers. Return ONLY the search query, no explanation.`,
     });
+    console.log(`[gemini] expand refineQuery took ${(performance.now() - t0).toFixed(0)}ms`);
 
     const refinedQuery = refineResp.text?.trim() ?? paperTitle;
     console.log(`[expand] Paper: "${paperTitle}" → Query: "${refinedQuery}"`);
@@ -301,9 +318,14 @@ Generate a single, broad search query to find 3-5 closely related academic paper
         )
         .join("\n\n");
 
+    const pickInstruction = depth !== undefined && depth <= 2
+        ? "Pick 3 to 5 of the most relevant and diverse related papers. Prefer foundational, well-cited, and broadly accessible papers over narrow follow-ups."
+        : "Pick 2 to 5 of the most relevant and diverse related papers. Prefer papers that cover different aspects or branches of the topic.";
+
+    const t1 = performance.now();
     const pickResp = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `You are a research assistant. Given a source paper and a list of search results, pick the 3 to 5 most relevant and diverse related papers. Prefer papers that cover different aspects or branches of the topic.
+        contents: `You are a research assistant. Given a source paper and a list of search results, ${pickInstruction}
 
 Source paper: "${paperTitle}"
 
@@ -312,6 +334,7 @@ ${listText}
 
 Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No explanation, no markdown fences, just raw JSON array.`,
     });
+    console.log(`[gemini] expand pickPapers took ${(performance.now() - t1).toFixed(0)}ms`);
 
     const raw = pickResp.text?.trim() ?? "[]";
     try {
@@ -329,17 +352,18 @@ Reply with ONLY a JSON array of objects, each with "title" and "url" keys. No ex
             }
 
             if (matched.length > 0) {
-                // Frontier evaluation
-                try {
-                    const frontier = await evaluateFrontier(paperContext, matched, results, constellationId);
-                    if (frontier.isFrontier) {
-                        return { papers: [], frontier };
+                // Frontier evaluation — only at depth 4+
+                if (depth !== undefined && depth >= 4) {
+                    try {
+                        const frontier = await evaluateFrontier(paperContext, matched, results, constellationId);
+                        if (frontier.isFrontier) {
+                            return { papers: [], frontier };
+                        }
+                    } catch (err) {
+                        console.warn("[expand] frontier eval failed, proceeding normally:", err);
                     }
-                    return { papers: matched, frontier: null };
-                } catch (err) {
-                    console.warn("[expand] frontier eval failed, proceeding normally:", err);
-                    return { papers: matched, frontier: null };
                 }
+                return { papers: matched, frontier: null };
             }
         }
     } catch {
@@ -422,10 +446,12 @@ Reply with ONLY a JSON object (no markdown fences, no explanation):
   "reason": "1-2 sentence user-facing explanation of why the parent is or isn't at the frontier"
 }`;
 
+    const t0 = performance.now();
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
     });
+    console.log(`[gemini] evaluateFrontier took ${(performance.now() - t0).toFixed(0)}ms`);
 
     const raw = response.text?.trim() ?? "";
     console.log("[expand] frontier eval raw:", raw);
@@ -509,10 +535,12 @@ Example: {"title": "Some Paper Title", "url": "https://arxiv.org/pdf/example.pdf
 
     console.log("[followUp] pickBestPaperWithContext prompt:\n", pickPrompt);
 
+    const t0 = performance.now();
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: pickPrompt,
     });
+    console.log(`[gemini] pickBestPaperWithContext took ${(performance.now() - t0).toFixed(0)}ms`);
 
     const raw = response.text?.trim() ?? "";
     console.log("[search] pickBestPaperWithContext raw response:", raw);
@@ -631,10 +659,12 @@ A single line containing only the Exa-optimized search query string.
 
     console.log("[followUp] refineQuery prompt:\n", refinePrompt);
 
+    const t0 = performance.now();
     const refineResp = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: refinePrompt,
     });
+    console.log(`[gemini] followUp refineQuery took ${(performance.now() - t0).toFixed(0)}ms`);
 
     const refinedQuery = refineResp.text?.trim() ?? followUpQuestion;
     console.log(`[followUp] Follow-up: "${followUpQuestion}" → Query: "${refinedQuery}"`);
@@ -656,10 +686,12 @@ A single line containing only the Exa-optimized search query string.
     console.log(`[followUp] Picked: "${pickedPaper?.title}" → ${pickedPaper?.url}`);
 
     // 5. Generate a short AI response for the chat
+    const t1 = performance.now();
     const summaryResp = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `You are a research assistant. A user asked "${followUpQuestion}" while reading "${parentPaperTitle}". You found a related paper: "${pickedPaper?.title ?? "none"}". Write a single brief sentence (max 30 words) explaining why this paper is relevant to their question. Be conversational and informative.`,
     });
+    console.log(`[gemini] followUp summary took ${(performance.now() - t1).toFixed(0)}ms`);
 
     const aiResponse =
         summaryResp.text?.trim() ??
