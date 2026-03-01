@@ -146,42 +146,12 @@ export async function upsertConstellation(c: SavedConstellation): Promise<void> 
 export async function renameConstellation(id: string, name: string): Promise<void> {
   const normalizedName = normalizeRequiredTitle(name, name || "Untitled");
 
-  const { data: existing } = await supabase
-    .from("constellations")
-    .select("graph_data, paper_title, paper_url, title, name")
-    .eq("id", id)
-    .single();
-
-  let graphPatch: SerializedGraph | undefined;
-  const existingRow = existing as {
-    graph_data: SerializedGraph | null;
-    paper_title: string | null;
-    paper_url: string | null;
-    title: string | null;
-    name: string | null;
-  } | null;
-
-  const graph = sanitizeGraph(existingRow?.graph_data ?? null, {
-    paperTitle: existingRow?.paper_title ?? null,
-    paperUrl: existingRow?.paper_url ?? null,
-    rootLabel: normalizedName,
-  });
-
-  if (graph && graph.nodes) {
-    const origin = graph.nodes.find((n) => n.depth === 0);
-    if (origin) {
-      origin.label = normalizedName;
-      graphPatch = graph;
-    }
-  }
-
   const { error } = await supabase
     .from("constellations")
     .update({
       name: normalizedName,
       title: normalizedName,
       updated_at: new Date().toISOString(),
-      ...(graphPatch ? { graph_data: graphPatch } : {}),
     })
     .eq("id", id);
 
@@ -236,6 +206,6 @@ export async function loadGraphData(constellationId: string): Promise<Serialized
   return sanitizeGraph(row.graph_data, {
     paperTitle: row.paper_title,
     paperUrl: row.paper_url,
-    rootLabel: row.name || row.title,
+    rootLabel: row.paper_title || row.name || row.title,
   });
 }

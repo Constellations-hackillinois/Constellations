@@ -233,18 +233,6 @@ export default function ConstellationView({
     renameConstellationDB(id, newName);
 
     if (id === currentIdRef.current) {
-      const s = stateRef.current;
-      for (const [, node] of s.nodes) {
-        if (node.depth === 0) {
-          node.label = newName;
-          node.paperTitle = newName;
-          if (node.el) {
-            const labelEl = node.el.querySelector(`.${styles.starLabel}`);
-            if (labelEl) labelEl.textContent = newName;
-          }
-          break;
-        }
-      }
       flushGraph();
     }
   }
@@ -1822,7 +1810,7 @@ export default function ConstellationView({
     }
 
     function createFreshOrigin() {
-      const originLabel = normalizedTopic;
+      const originLabel = normalizedPaperTitle || normalizedTopic;
       const originNode = createNode(originLabel, 0, null, 0);
       originNode.paperTitle = normalizedPaperTitle;
       originNode.paperUrl = normalizedPaperUrl;
