@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { followUpSearch, expandSearch, type ExpandSearchResult } from "@/app/actions/search";
+import { followUpSearch, expandSearch, resolveUrlToPaper, type ExpandSearchResult } from "@/app/actions/search";
 import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
 import { ingestPaper } from "@/app/actions/pipeline";
 import {
@@ -30,7 +30,7 @@ import {
   type SerializedGraph,
   type SerializedNode,
 } from "@/app/actions/constellations";
-import { normalizePaperTitle, normalizePaperUrl, normalizeRequiredTitle } from "@/lib/papers";
+import { canonicalPaperKeyFromUrl, normalizePaperTitle, normalizePaperUrl, normalizeRequiredTitle } from "@/lib/papers";
 
 interface PdfChatMessage {
   id: string;
@@ -297,6 +297,7 @@ export default function ConstellationView({
   const daughterLabelScaleBucketRef = useRef<number | null>(null);
   const graphZoomRef = useRef<number | null>(null);
   const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const highlightSubtreeRef = useRef<(id: number) => void>(() => {});
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -659,6 +660,17 @@ export default function ConstellationView({
 
   const createNodeRef = useRef<(label: string, depth: number, parentId: number | null, angle: number) => ConstellationNode>(null!);
 
+  /** Canonical paper key -> node id, for duplicate detection. */
+  const getExistingPaperKeyToNodeId = useCallback((): Map<string, number> => {
+    const s = stateRef.current;
+    const map = new Map<string, number>();
+    for (const [, n] of s.nodes) {
+      const key = canonicalPaperKeyFromUrl(n.paperUrl);
+      if (key) map.set(key, n.id);
+    }
+    return map;
+  }, []);
+
   const sendMessage = useCallback(async () => {
     const s = stateRef.current;
     const input = chatInputRef.current;
@@ -680,6 +692,16 @@ export default function ConstellationView({
       const { pickedPaper } = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
 
       if (pickedPaper) {
+        const existingByKey = getExistingPaperKeyToNodeId();
+        const pickedKey = canonicalPaperKeyFromUrl(pickedPaper.url);
+        const existingNodeId = pickedKey ? existingByKey.get(pickedKey) : undefined;
+        if (existingNodeId !== undefined) {
+          // Paper already in constellation — highlight it, don't spawn duplicate
+          highlightSubtreeRef.current(existingNodeId);
+          flushGraph();
+          return;
+        }
+
         const isOrigin = node.depth === 0;
         const parentAngle = Math.atan2(node.y, node.x);
         const angle = isOrigin
@@ -732,7 +754,7 @@ export default function ConstellationView({
       node.el?.classList.remove(styles.followUpLoading);
       endGenerationTrace();
     }
-  }, [beginGenerationTrace, flushGraph]);
+  }, [beginGenerationTrace, flushGraph, getExistingPaperKeyToNodeId]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -754,6 +776,7 @@ export default function ConstellationView({
     }
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
+  highlightSubtreeRef.current = highlightSubtree;
 
   const tracePathToRoot = useCallback((id: number) => {
     const s = stateRef.current;
@@ -1122,11 +1145,21 @@ export default function ConstellationView({
           return;
         }
 
+        const existingByKey = getExistingPaperKeyToNodeId();
+        const papersToAdd = papers.filter((p) => {
+          const key = canonicalPaperKeyFromUrl(p.url);
+          return !key || !existingByKey.has(key);
+        });
+        if (papersToAdd.length === 0) {
+          flushGraph();
+          return;
+        }
+
         // Parent emits a pulse
         parent.el?.classList.add(styles.spawning);
         setTimeout(() => parent.el?.classList.remove(styles.spawning), 900);
 
-        const numChildren = papers.length;
+        const numChildren = papersToAdd.length;
         const isOrigin = parent.depth === 0;
         const parentAngle = Math.atan2(parent.y, parent.x);
         const goldenAngle = Math.PI * (3 - Math.sqrt(5));
@@ -1143,16 +1176,17 @@ export default function ConstellationView({
           }
 
           const child = createNodeRef.current(
-            papers[i].title,
+            papersToAdd[i].title,
             parent.depth + 1,
             id,
             angle
           );
-          child.paperTitle = papers[i].title;
-          child.paperUrl = papers[i].url;
-          if (papers[i].url) {
-            ingestPaper(papers[i].url, papers[i].title, currentIdRef.current);
+          child.paperTitle = papersToAdd[i].title;
+          child.paperUrl = papersToAdd[i].url;
+          if (papersToAdd[i].url) {
+            ingestPaper(papersToAdd[i].url, papersToAdd[i].title, currentIdRef.current);
           }
+          existingByKey.set(canonicalPaperKeyFromUrl(papersToAdd[i].url) ?? "", child.id);
 
           // Staged ignition: child materializes as beam approaches
           const ignitionDelay = i * 150 + 420;
@@ -1207,7 +1241,7 @@ export default function ConstellationView({
         endGenerationTrace();
       }
     },
-    [beginGenerationTrace, flushGraph, highlightSubtree]
+    [beginGenerationTrace, flushGraph, getExistingPaperKeyToNodeId, highlightSubtree]
   );
 
   expandNodeRef.current = expandNode;
@@ -1862,6 +1896,32 @@ export default function ConstellationView({
       }
     }
 
+    function updateNodeLabel(node: ConstellationNode, title: string) {
+      const t = normalizePaperTitle(title) || title.trim() || "Untitled";
+      node.paperTitle = t;
+      node.label = t;
+      const labelEl = node.el?.querySelector(`.${styles.starLabel}`) as HTMLDivElement | null;
+      if (labelEl) labelEl.textContent = t;
+    }
+
+    async function backfillMissingTitles() {
+      const state = stateRef.current;
+      const toBackfill = Array.from(state.nodes.values()).filter(
+        (n) => n.paperUrl && (!n.paperTitle?.trim() || !n.label?.trim())
+      );
+      for (const node of toBackfill) {
+        try {
+          const resolved = await resolveUrlToPaper(node.paperUrl!);
+          if (resolved?.title) {
+            updateNodeLabel(node, resolved.title);
+            flushGraph();
+          }
+        } catch (err) {
+          console.warn("[constellation] backfill title for node failed:", node.paperUrl, err);
+        }
+      }
+    }
+
     const cid = currentIdRef.current;
     if (cid) {
       loadGraphData(cid).then((saved) => {
@@ -1870,11 +1930,14 @@ export default function ConstellationView({
         } else {
           createFreshOrigin();
         }
+        backfillMissingTitles();
       }).catch(() => {
         createFreshOrigin();
+        backfillMissingTitles();
       });
     } else {
       createFreshOrigin();
+      backfillMissingTitles();
     }
 
     s.animFrameId = requestAnimationFrame(frame);
