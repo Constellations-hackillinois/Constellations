@@ -1372,25 +1372,49 @@ export default function ConstellationView({
       return { minX, maxX, minY, maxY };
     }
 
-    function drawMinimap() {
-      if (!minimapCanvas || s.nodes.size === 0) return;
-      const ctx = minimapCanvas.getContext("2d");
-      if (!ctx) return;
+    function getMinimapProjection() {
+      const viewport = getViewportBounds();
+      let minX = viewport.minX;
+      let maxX = viewport.maxX;
+      let minY = viewport.minY;
+      let maxY = viewport.maxY;
 
-      const { minX, maxX, minY, maxY } = getViewportBounds();
-      const rangeX = maxX - minX;
-      const rangeY = maxY - minY;
-      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
-      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
-      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
+      s.nodes.forEach((node) => {
+        minX = Math.min(minX, node.x);
+        maxX = Math.max(maxX, node.x);
+        minY = Math.min(minY, node.y);
+        maxY = Math.max(maxY, node.y);
+      });
+
+      const worldPadding = 80;
+      minX -= worldPadding;
+      maxX += worldPadding;
+      minY -= worldPadding;
+      maxY += worldPadding;
+
+      const rangeX = Math.max(maxX - minX, 1);
+      const rangeY = Math.max(maxY - minY, 1);
+      const minimapPadding = 6;
+      const contentW = MINIMAP_W - minimapPadding * 2;
+      const contentH = MINIMAP_H - minimapPadding * 2;
+      const scale = Math.min(contentW / rangeX, contentH / rangeY);
+      const ox = minimapPadding + (contentW - rangeX * scale) / 2;
+      const oy = minimapPadding + (contentH - rangeY * scale) / 2;
 
       const toMini = (lx: number, ly: number) => ({
         x: ox + (lx - minX) * scale,
         y: oy + (ly - minY) * scale,
       });
 
-      const inView = (x: number, y: number) =>
-        x >= minX && x <= maxX && y >= minY && y <= maxY;
+      return { minX, maxX, minY, maxY, scale, ox, oy, toMini, viewport };
+    }
+
+    function drawMinimap() {
+      if (!minimapCanvas) return;
+      const ctx = minimapCanvas.getContext("2d");
+      if (!ctx) return;
+
+      const { toMini, viewport } = getMinimapProjection();
 
       ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
       ctx.fillStyle = "rgba(6, 10, 20, 0.85)";
@@ -1401,7 +1425,6 @@ export default function ConstellationView({
         if (node.parentId === null) return;
         const par = s.nodes.get(node.parentId);
         if (!par) return;
-        if (!inView(par.x, par.y) && !inView(node.x, node.y)) return;
         const anim = s.edgeAnims.find((a) => a.fromId === node.parentId && a.toId === node.id && a.progress < 1);
         if (anim) return;
         const cp = getEdgeCP(par, node);
@@ -1417,7 +1440,6 @@ export default function ConstellationView({
       });
 
       s.nodes.forEach((node) => {
-        if (!inView(node.x, node.y)) return;
         const p = toMini(node.x, node.y);
         const r = node.depth === 0 ? 3 : node.depth >= 2 ? 1.2 : 2;
         ctx.beginPath();
@@ -1425,24 +1447,30 @@ export default function ConstellationView({
         ctx.fillStyle = node.depth === 0 ? "rgba(255, 216, 102, 0.9)" : node.depth === 1 ? "rgba(126, 200, 227, 0.8)" : node.depth === 2 ? "rgba(232, 148, 90, 0.7)" : "rgba(199, 146, 234, 0.7)";
         ctx.fill();
       });
+
+      const topLeft = toMini(viewport.minX, viewport.minY);
+      const bottomRight = toMini(viewport.maxX, viewport.maxY);
+      const viewX = Math.min(topLeft.x, bottomRight.x);
+      const viewY = Math.min(topLeft.y, bottomRight.y);
+      const viewW = Math.abs(bottomRight.x - topLeft.x);
+      const viewH = Math.abs(bottomRight.y - topLeft.y);
+      ctx.fillStyle = "rgba(165, 165, 165, 0.28)";
+      ctx.fillRect(viewX, viewY, viewW, viewH);
+      ctx.strokeStyle = "rgba(220, 220, 220, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(viewX + 0.5, viewY + 0.5, Math.max(viewW - 1, 0), Math.max(viewH - 1, 0));
     }
 
     function handleMinimapClick(e: MouseEvent) {
-      if (!minimapCanvas || s.nodes.size === 0) return;
+      if (!minimapCanvas) return;
       const rect = minimapCanvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       if (mx < 0 || mx >= MINIMAP_W || my < 0 || my >= MINIMAP_H) return;
 
-      const { minX, maxX, minY, maxY } = getViewportBounds();
-      const rangeX = maxX - minX;
-      const rangeY = maxY - minY;
-      const scale = Math.min((MINIMAP_W - 8) / rangeX, (MINIMAP_H - 8) / rangeY);
-      const ox = 4 + (MINIMAP_W - 8 - rangeX * scale) / 2;
-      const oy = 4 + (MINIMAP_H - 8 - rangeY * scale) / 2;
-
-      const lx = minX + (mx - ox) / scale;
-      const ly = minY + (my - oy) / scale;
+      const { minX, maxX, minY, maxY, scale, ox, oy } = getMinimapProjection();
+      const lx = Math.max(minX, Math.min(maxX, minX + (mx - ox) / scale));
+      const ly = Math.max(minY, Math.min(maxY, minY + (my - oy) / scale));
 
       s.panAnimating = true;
       s.panAnimFromX = s.panX;
