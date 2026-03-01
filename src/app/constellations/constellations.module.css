@@ -689,6 +689,7 @@
 
 /* ─── Chat window ─── */
 .chatWindow {
+  --chat-scale: 1;
   position: fixed;
   z-index: 10;
   width: 320px;
@@ -706,14 +707,14 @@
   pointer-events: all;
   overflow: hidden;
   opacity: 0;
-  transform: scale(0.92) translateY(8px);
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top left;
+  transform: scale(var(--chat-scale)) translateY(0);
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .visible {
   display: flex;
   opacity: 1;
-  transform: scale(1) translateY(0);
 }
 
 .chatHeaderRow {

@@ -94,6 +94,15 @@ const RING_SPACING = 120;
 const MIN_NODE_DISTANCE = 55;
 const MAX_PLACEMENT_ATTEMPTS = 12;
 const NODE_DRAG_THRESHOLD = 6;
+const CHAT_FALLBACK_WIDTH = 320;
+const CHAT_FALLBACK_HEIGHT = 380;
+const CHAT_NODE_GAP_X = 26;
+const CHAT_NODE_GAP_Y = 24;
+const CHAT_VIEWPORT_PADDING = 10;
+const CHAT_SCALE_MIN = 0.4;
+const CHAT_SCALE_MAX = 1.2;
+const CHAT_SCALE_IN_FACTOR = 0.3;
+const CHAT_SCALE_OUT_FACTOR = 1.0;
 
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -548,14 +557,64 @@ export default function ConstellationView({
     if (!chat) return;
 
     const pos = toScreen(node.x, node.y);
-    let left = pos.x + 25;
-    let top = pos.y - 30;
-    if (left + 270 > window.innerWidth) left = pos.x - 285;
-    if (top + 310 > window.innerHeight) top = window.innerHeight - 320;
-    if (top < 10) top = 10;
+    const zoom = s.zoom;
+    const chatScale =
+      zoom >= 1
+        ? Math.min(CHAT_SCALE_MAX, 1 + (zoom - 1) * CHAT_SCALE_IN_FACTOR)
+        : Math.max(CHAT_SCALE_MIN, 1 - (1 - zoom) * CHAT_SCALE_OUT_FACTOR);
+    chat.style.setProperty("--chat-scale", String(chatScale));
+    const chatWidth = chat.offsetWidth || CHAT_FALLBACK_WIDTH;
+    const chatHeight = chat.offsetHeight || CHAT_FALLBACK_HEIGHT;
+    const scaledChatWidth = chatWidth * chatScale;
+    const scaledChatHeight = chatHeight * chatScale;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
 
-    chat.style.left = left + "px";
-    chat.style.top = top + "px";
+    // Place popup opposite the segment that connects this node to its lower (parent) node.
+    let horizontalSide: 1 | -1 = 1;
+
+    if (node.parentId !== null) {
+      const lowerNode = s.nodes.get(node.parentId);
+      if (lowerNode) {
+        const dx = lowerNode.x - node.x;
+
+        if (Math.abs(dx) > 0.5) horizontalSide = dx > 0 ? -1 : 1;
+      }
+    }
+
+    const preferredLeft =
+      horizontalSide === 1
+        ? pos.x + CHAT_NODE_GAP_X
+        : pos.x - scaledChatWidth - CHAT_NODE_GAP_X;
+    const alternateLeft =
+      horizontalSide === 1
+        ? pos.x - scaledChatWidth - CHAT_NODE_GAP_X
+        : pos.x + CHAT_NODE_GAP_X;
+    const preferredLeftFits =
+      preferredLeft >= CHAT_VIEWPORT_PADDING &&
+      preferredLeft + scaledChatWidth <= viewportWidth - CHAT_VIEWPORT_PADDING;
+    const alternateLeftFits =
+      alternateLeft >= CHAT_VIEWPORT_PADDING &&
+      alternateLeft + scaledChatWidth <= viewportWidth - CHAT_VIEWPORT_PADDING;
+
+    let left = preferredLeft;
+    if (!preferredLeftFits && alternateLeftFits) {
+      left = alternateLeft;
+    } else if (!preferredLeftFits) {
+      left = Math.min(
+        Math.max(preferredLeft, CHAT_VIEWPORT_PADDING),
+        viewportWidth - scaledChatWidth - CHAT_VIEWPORT_PADDING
+      );
+    }
+
+    // Align popup top edge with node Y, then clamp inside viewport.
+    const top = Math.min(
+      Math.max(pos.y, CHAT_VIEWPORT_PADDING),
+      viewportHeight - scaledChatHeight - CHAT_VIEWPORT_PADDING
+    );
+
+    chat.style.left = `${Math.round(left)}px`;
+    chat.style.top = `${Math.round(top)}px`;
   }, [toScreen]);
 
   const showChat = useCallback(
