@@ -384,6 +384,7 @@ export default function ConstellationView({
     showDaughterLabels: true,
     traceNodeIds: new Set<number>(),
     generationTraceNodeIds: new Set<number>(),
+    generationTraceNodeRefCounts: new Map<number, number>(),
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -475,26 +476,38 @@ export default function ConstellationView({
     s.highlights.clear();
   }, []);
 
-  const clearGenerationTrace = useCallback(() => {
+  const beginGenerationTrace = useCallback((id: number) => {
     const s = stateRef.current;
-    s.generationTraceNodeIds.forEach((nid) => {
-      const n = s.nodes.get(nid);
-      n?.el?.classList.remove(styles.generationTraceNode);
-    });
-    s.generationTraceNodeIds.clear();
-  }, []);
-
-  const traceGenerationPathToRoot = useCallback((id: number) => {
-    const s = stateRef.current;
-    clearGenerationTrace();
-
+    const pathNodeIds: number[] = [];
     let current: ConstellationNode | undefined = s.nodes.get(id);
     while (current) {
-      s.generationTraceNodeIds.add(current.id);
-      current.el?.classList.add(styles.generationTraceNode);
+      pathNodeIds.push(current.id);
+      const prevCount = s.generationTraceNodeRefCounts.get(current.id) ?? 0;
+      const nextCount = prevCount + 1;
+      s.generationTraceNodeRefCounts.set(current.id, nextCount);
+      if (prevCount === 0) {
+        s.generationTraceNodeIds.add(current.id);
+        current.el?.classList.add(styles.generationTraceNode);
+      }
       current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
     }
-  }, [clearGenerationTrace]);
+
+    return () => {
+      const currentState = stateRef.current;
+      for (const nid of pathNodeIds) {
+        const count = currentState.generationTraceNodeRefCounts.get(nid);
+        if (!count) continue;
+        if (count === 1) {
+          currentState.generationTraceNodeRefCounts.delete(nid);
+          currentState.generationTraceNodeIds.delete(nid);
+          const node = currentState.nodes.get(nid);
+          node?.el?.classList.remove(styles.generationTraceNode);
+        } else {
+          currentState.generationTraceNodeRefCounts.set(nid, count - 1);
+        }
+      }
+    };
+  }, []);
 
   const hideChat = useCallback(() => {
     chatRef.current?.classList.remove(styles.visible);
@@ -658,7 +671,7 @@ export default function ConstellationView({
     if (input) input.value = "";
 
     const parentNodeId = node.id;
-    traceGenerationPathToRoot(parentNodeId);
+    const endGenerationTrace = beginGenerationTrace(parentNodeId);
     node.el?.classList.add(styles.followUpLoading);
 
     try {
@@ -717,9 +730,9 @@ export default function ConstellationView({
       flushGraph();
     } finally {
       node.el?.classList.remove(styles.followUpLoading);
-      clearGenerationTrace();
+      endGenerationTrace();
     }
-  }, [clearGenerationTrace, flushGraph, traceGenerationPathToRoot]);
+  }, [beginGenerationTrace, flushGraph]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -1084,7 +1097,7 @@ export default function ConstellationView({
       const pTitle = parent.paperTitle ?? parent.label;
       const pUrl = parent.paperUrl ?? "";
 
-      traceGenerationPathToRoot(id);
+      const endGenerationTrace = beginGenerationTrace(id);
       if (parent.el) {
         parent.el.classList.add(styles.followUpLoading);
       }
@@ -1191,10 +1204,10 @@ export default function ConstellationView({
         if (parent.el) {
           parent.el.classList.remove(styles.followUpLoading);
         }
-        clearGenerationTrace();
+        endGenerationTrace();
       }
     },
-    [clearGenerationTrace, flushGraph, highlightSubtree, traceGenerationPathToRoot]
+    [beginGenerationTrace, flushGraph, highlightSubtree]
   );
 
   expandNodeRef.current = expandNode;
@@ -1272,6 +1285,7 @@ export default function ConstellationView({
           s.highlights.delete(nid);
           s.traceNodeIds.delete(nid);
           s.generationTraceNodeIds.delete(nid);
+          s.generationTraceNodeRefCounts.delete(nid);
         }
 
         // Persist to Supabase
