@@ -296,6 +296,7 @@ export default function ConstellationView({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const daughterLabelScaleBucketRef = useRef<number | null>(null);
   const graphZoomRef = useRef<number | null>(null);
+  const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -1505,6 +1506,12 @@ export default function ConstellationView({
     }
 
     function handleMouseMove(e: MouseEvent) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      mouseOffsetRef.current = {
+        x: (e.clientX - w / 2) / (w / 2),
+        y: (e.clientY - h / 2) / (h / 2),
+      };
       if (s.draggedNodeId !== null) {
         const node = s.nodes.get(s.draggedNodeId);
         if (!node) return;
@@ -1630,19 +1637,23 @@ export default function ConstellationView({
     chat.addEventListener("mouseenter", chatEnter);
     chat.addEventListener("mouseleave", chatLeave);
 
+    const STAR_PARALLAX_STRENGTH = 70;
     function drawStarField(time: number) {
       const w = starCanvas.width;
       const h = starCanvas.height;
+      const mouse = mouseOffsetRef.current;
+      const mx = mouse.x * STAR_PARALLAX_STRENGTH;
+      const my = mouse.y * STAR_PARALLAX_STRENGTH;
 
       starCtx.clearRect(0, 0, w, h);
 
-      // Stars (parallax: move with pan via depth)
+      // Stars (parallax: move with pan and mouse via depth)
       for (const star of s.stars) {
         const alpha =
           star.baseAlpha +
           Math.sin(time * 0.001 * star.speed + star.phase) * 0.2;
-        const sx = ((star.x + s.panX * star.depth) % w + w) % w;
-        const sy = ((star.y + s.panY * star.depth) % h + h) % h;
+        const sx = ((star.x + s.panX * star.depth + mx * star.depth) % w + w) % w;
+        const sy = ((star.y + s.panY * star.depth + my * star.depth) % h + h) % h;
         starCtx.beginPath();
         starCtx.arc(sx, sy, star.r, 0, Math.PI * 2);
         const t = star.tint;
