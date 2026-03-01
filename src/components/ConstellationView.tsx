@@ -5,6 +5,7 @@ import {
   BookOpen,
   ExternalLink,
   House,
+  FileText,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -1971,14 +1972,6 @@ export default function ConstellationView({
 
   return (
     <>
-      <a
-        href="/"
-        className={styles.homeButton}
-        title="Back to search"
-      >
-        <House size={16} aria-hidden="true" />
-      </a>
-
       <button
         ref={returnBtnRef}
         className={styles.returnToOrigin}

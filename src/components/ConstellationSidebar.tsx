@@ -21,9 +21,10 @@ import styles from "@/app/constellations/constellations.module.css";
 
 interface ConstellationSidebarProps {
   activeId?: string;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export default function ConstellationSidebar({ activeId }: ConstellationSidebarProps) {
+export default function ConstellationSidebar({ activeId, onOpenChange }: ConstellationSidebarProps) {
   const [open, setOpen] = useState(true);
   const [constellations, setConstellations] = useState<SavedConstellation[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
       <div className={styles.sidebarActions}>
         <button
           className={`${styles.sidebarActionBtn} ${styles.sidebarToggleBtn}`}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => { setOpen((o) => !o); onOpenChange?.(!open); }}
           title={open ? "Collapse sidebar" : "Expand sidebar"}
         >
           <span className={styles.sidebarLogo} aria-hidden="true" />

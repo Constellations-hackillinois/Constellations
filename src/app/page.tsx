@@ -24,8 +24,9 @@ function Starfield({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+    const canvas = canvasEl as HTMLCanvasElement;
     const ctx = canvas.getContext("2d")!;
 
     const STAR_TINTS = [
@@ -134,6 +135,7 @@ export default function Home() {
   const [displayTopic, setDisplayTopic] = useState("");
   const [collapseProgress, setCollapseProgress] = useState(0);
   const [transitionStarActive, setTransitionStarActive] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -224,7 +226,7 @@ export default function Home() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#060a14]">
       {/* ─── Sidebar (landing only) ─── */}
-      {phase === "landing" && <ConstellationSidebar />}
+      {phase === "landing" && <ConstellationSidebar onOpenChange={setSidebarOpen} />}
 
       {/* ─── Constellation layer (mounts after transition) ─── */}
       {phase === "constellation" && (
@@ -244,7 +246,7 @@ export default function Home() {
           <Starfield collapseProgress={collapseProgress} mouseOffsetRef={mouseOffsetRef} />
 
           <div
-            className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6`}
+            className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6 transition-[padding-left] duration-300 ease-in-out ${sidebarOpen ? "pl-[275px]" : "pl-[54px]"}`}
           >
             <h1
               className={`mb-3 text-4xl font-semibold tracking-tight text-white/90 sm:text-5xl transition-all duration-700 ${
