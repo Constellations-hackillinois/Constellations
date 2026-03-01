@@ -4,7 +4,6 @@ import { useEffect, useRef, useCallback, useState, type FormEvent } from "react"
 import {
   BookOpen,
   ExternalLink,
-  FileText,
   House,
   PanelLeftClose,
   PanelLeftOpen,
@@ -96,7 +95,7 @@ const MAX_PLACEMENT_ATTEMPTS = 12;
 const NODE_DRAG_THRESHOLD = 6;
 const CHAT_FALLBACK_WIDTH = 320;
 const CHAT_FALLBACK_HEIGHT = 380;
-const CHAT_NODE_GAP_X = 26;
+const CHAT_NODE_GAP_X = 44;
 const CHAT_NODE_GAP_Y = 24;
 const CHAT_VIEWPORT_PADDING = 10;
 const CHAT_SCALE_MIN = 0.4;
@@ -287,10 +286,6 @@ export default function ConstellationView({
   const glowRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
-  const chatHeaderRef = useRef<HTMLDivElement>(null);
-  const chatPaperMetaRef = useRef<HTMLDivElement>(null);
-  const chatPaperLinkRef = useRef<HTMLAnchorElement>(null);
-  const chatPaperTitleRef = useRef<HTMLSpanElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -460,7 +455,7 @@ export default function ConstellationView({
     s.showDaughterLabels = visible;
     for (const [, node] of s.nodes) {
       if (node.depth === 0 || !node.el) continue;
-      const labelEl = node.el.querySelector(`.${styles.starLabel}`) as HTMLDivElement | null;
+      const labelEl = node.el.querySelector(`.${styles.starLabel}`) as HTMLElement | null;
       if (!labelEl) continue;
       labelEl.style.display = visible ? "" : "none";
     }
@@ -547,6 +542,9 @@ export default function ConstellationView({
     const scaledChatHeight = chatHeight * chatScale;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
+    const baseGapX = node.depth === 0 ? CHAT_NODE_GAP_X * 0.9 : CHAT_NODE_GAP_X * 0.5;
+    const minGapX = baseGapX * (18 / CHAT_NODE_GAP_X);
+    const gapX = Math.max(minGapX, baseGapX * zoom);
 
     // Place popup opposite the segment that connects this node to its lower (parent) node.
     let horizontalSide: 1 | -1 = 1;
@@ -562,12 +560,12 @@ export default function ConstellationView({
 
     const preferredLeft =
       horizontalSide === 1
-        ? pos.x + CHAT_NODE_GAP_X
-        : pos.x - scaledChatWidth - CHAT_NODE_GAP_X;
+        ? pos.x + gapX
+        : pos.x - scaledChatWidth - gapX;
     const alternateLeft =
       horizontalSide === 1
-        ? pos.x - scaledChatWidth - CHAT_NODE_GAP_X
-        : pos.x + CHAT_NODE_GAP_X;
+        ? pos.x - scaledChatWidth - gapX
+        : pos.x + gapX;
     const preferredLeftFits =
       preferredLeft >= CHAT_VIEWPORT_PADDING &&
       preferredLeft + scaledChatWidth <= viewportWidth - CHAT_VIEWPORT_PADDING;
@@ -585,9 +583,9 @@ export default function ConstellationView({
       );
     }
 
-    // Align popup top edge with node Y, then clamp inside viewport.
+    // Vertically center popup on node Y, then clamp inside viewport.
     const top = Math.min(
-      Math.max(pos.y, CHAT_VIEWPORT_PADDING),
+      Math.max(pos.y - scaledChatHeight / 2, CHAT_VIEWPORT_PADDING),
       viewportHeight - scaledChatHeight - CHAT_VIEWPORT_PADDING
     );
 
@@ -601,18 +599,6 @@ export default function ConstellationView({
       const node = s.nodes.get(id);
       if (!node) return;
       s.chatNodeId = id;
-      if (chatHeaderRef.current) chatHeaderRef.current.textContent = node.label;
-      if (chatPaperMetaRef.current && chatPaperLinkRef.current && chatPaperTitleRef.current) {
-        if (node.paperUrl) {
-          chatPaperMetaRef.current.style.display = "";
-          chatPaperLinkRef.current.href = node.paperUrl;
-          chatPaperTitleRef.current.textContent = node.paperTitle ?? node.label;
-        } else {
-          chatPaperMetaRef.current.style.display = "none";
-          chatPaperLinkRef.current.removeAttribute("href");
-          chatPaperTitleRef.current.textContent = "";
-        }
-      }
 
       const chat = chatRef.current;
       if (chat) {
@@ -969,8 +955,34 @@ export default function ConstellationView({
       body.className = styles.starBody;
       el.appendChild(body);
 
-      const label = document.createElement("div");
+      const label = document.createElement("a");
       label.className = styles.starLabel;
+      if (label instanceof HTMLAnchorElement) {
+        label.classList.add(styles.starLabelLink);
+        label.target = "_blank";
+        label.rel = "noopener noreferrer";
+        const initialLink = node.paperUrl ? (toCanonicalArxivPdfUrl(node.paperUrl) ?? node.paperUrl) : null;
+        if (initialLink) {
+          label.href = initialLink;
+        }
+        label.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+        });
+        label.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const currentNode = stateRef.current.nodes.get(node.id);
+          const currentPaperUrl = currentNode?.paperUrl ?? null;
+          const link = currentPaperUrl ? (toCanonicalArxivPdfUrl(currentPaperUrl) ?? currentPaperUrl) : null;
+          if (!link) {
+            e.preventDefault();
+            return;
+          }
+          label.href = link;
+        });
+        label.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+        });
+      }
       label.textContent = node.label;
       if (node.depth > 0 && !s.showDaughterLabels) {
         label.style.display = "none";
@@ -2206,50 +2218,6 @@ export default function ConstellationView({
       <div ref={nodesRef} className={styles.nodesContainer} />
 
       <div ref={chatRef} className={styles.chatWindow}>
-        <div className={styles.chatHeaderRow}>
-          <div ref={chatHeaderRef} className={styles.chatHeader}>
-            Node
-          </div>
-          <button
-            className={styles.chatExpandBtn}
-            title="Find related papers"
-            onClick={() => {
-              const id = stateRef.current.chatNodeId;
-              if (id !== null) {
-                hideChat();
-                void expandNodeRef.current(id);
-              }
-            }}
-          >
-            <Plus size={13} aria-hidden="true" />
-            Expand
-          </button>
-          <button
-            className={styles.chatDeleteBtn}
-            title="Delete this node and its branches"
-            onClick={() => {
-              const id = stateRef.current.chatNodeId;
-              if (id !== null) {
-                const node = stateRef.current.nodes.get(id);
-                if (node && node.depth > 0) deleteNodeCascade(id);
-              }
-            }}
-          >
-            <Trash2 size={13} aria-hidden="true" />
-            Delete
-          </button>
-        </div>
-        <div ref={chatPaperMetaRef} className={styles.chatPaperMeta}>
-          <a
-            ref={chatPaperLinkRef}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.chatPaperLink}
-          >
-            <FileText size={12} aria-hidden="true" />
-            <span ref={chatPaperTitleRef}>View Paper</span>
-          </a>
-        </div>
         <div className={styles.chatInputArea}>
           <input
             ref={chatInputRef}
@@ -2269,6 +2237,34 @@ export default function ConstellationView({
           />
           <button className={styles.chatSend} onClick={sendMessage}>
             <SendHorizontal size={15} aria-hidden="true" />
+          </button>
+          <button
+            className={styles.chatExpandBtn}
+            title="Find related papers"
+            aria-label="Find related papers"
+            onClick={() => {
+              const id = stateRef.current.chatNodeId;
+              if (id !== null) {
+                hideChat();
+                void expandNodeRef.current(id);
+              }
+            }}
+          >
+            <Plus size={13} aria-hidden="true" />
+          </button>
+          <button
+            className={styles.chatDeleteBtn}
+            title="Delete this node and its branches"
+            aria-label="Delete this node and its branches"
+            onClick={() => {
+              const id = stateRef.current.chatNodeId;
+              if (id !== null) {
+                const node = stateRef.current.nodes.get(id);
+                if (node && node.depth > 0) deleteNodeCascade(id);
+              }
+            }}
+          >
+            <Trash2 size={13} aria-hidden="true" />
           </button>
         </div>
       </div>
