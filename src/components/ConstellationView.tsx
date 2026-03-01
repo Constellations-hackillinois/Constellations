@@ -10,6 +10,7 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  Split,
   Search,
   SendHorizontal,
   Trash2,
@@ -2236,7 +2237,7 @@ export default function ConstellationView({
             <SendHorizontal size={15} aria-hidden="true" />
           </button>
           <button
-            className={styles.chatExpandBtn}
+            className={styles.chatSend}
             title="Find related papers"
             aria-label="Find related papers"
             onClick={() => {
@@ -2247,7 +2248,7 @@ export default function ConstellationView({
               }
             }}
           >
-            <Plus size={13} aria-hidden="true" />
+            <Split size={15} aria-hidden="true" style={{ transform: "rotate(90deg)" }} />
           </button>
         </div>
       </div>
