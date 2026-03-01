@@ -460,18 +460,29 @@
   top: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  white-space: nowrap;
+  white-space: normal;
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
   letter-spacing: 0.01em;
   color: var(--c-label-color);
   text-shadow: 0 1px 10px var(--c-label-shadow), 0 0 24px rgba(0, 0, 0, 0.6);
   pointer-events: none;
   opacity: 1;
-  max-width: 180px;
+  width: min(20ch, 50vw);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
   transition: opacity 0.3s ease;
+}
+
+.starNode:not(.depth0) .starLabel {
+  width: min(calc(var(--daughter-label-ch, 20) * 1ch), 50vw);
+  font-size: calc(var(--daughter-label-font-px, 11) * 1px);
 }
 
 .starNode:hover .starLabel {

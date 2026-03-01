@@ -288,6 +288,8 @@ export default function ConstellationView({
   const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daughterLabelWidthChRef = useRef<number | null>(null);
+  const daughterLabelFontPxRef = useRef<number | null>(null);
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -371,6 +373,7 @@ export default function ConstellationView({
     dragPointerStartClientX: 0,
     dragPointerStartClientY: 0,
     didDragNode: false,
+    showDaughterLabels: true,
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -397,9 +400,36 @@ export default function ConstellationView({
     [toScreen]
   );
 
+  const updateDaughterLabelWidthByZoom = useCallback(() => {
+    const container = nodesRef.current;
+    if (!container) return;
+
+    const zoom = Math.max(0.3, Math.min(3.0, stateRef.current.zoom));
+    const widthCh = Math.max(12, Math.min(28, Math.round(20 * Math.pow(zoom, 0.7))));
+    const fontPx = Math.max(8, Math.min(11, Number((9.5 * Math.pow(zoom, 0.35)).toFixed(2))));
+    if (daughterLabelWidthChRef.current === widthCh && daughterLabelFontPxRef.current === fontPx) return;
+
+    daughterLabelWidthChRef.current = widthCh;
+    daughterLabelFontPxRef.current = fontPx;
+    container.style.setProperty("--daughter-label-ch", String(widthCh));
+    container.style.setProperty("--daughter-label-font-px", String(fontPx));
+  }, []);
+
   const updateAllPositions = useCallback(() => {
+    updateDaughterLabelWidthByZoom();
     stateRef.current.nodes.forEach((n) => updateNodePosition(n));
-  }, [updateNodePosition]);
+  }, [updateDaughterLabelWidthByZoom, updateNodePosition]);
+
+  const applyDaughterLabelVisibility = useCallback((visible: boolean) => {
+    const s = stateRef.current;
+    s.showDaughterLabels = visible;
+    for (const [, node] of s.nodes) {
+      if (node.depth === 0 || !node.el) continue;
+      const labelEl = node.el.querySelector(`.${styles.starLabel}`) as HTMLDivElement | null;
+      if (!labelEl) continue;
+      labelEl.style.display = visible ? "" : "none";
+    }
+  }, []);
 
   // ─── Chat helpers ───
   const renderMessages = useCallback((node: ConstellationNode) => {
@@ -801,6 +831,14 @@ export default function ConstellationView({
         e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
       const openWithShortcut =
         (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k";
+      const toggleDaughterNamesWithShortcut =
+        e.key === "Enter" && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+
+      if (toggleDaughterNamesWithShortcut && !isEditableElement(e.target)) {
+        e.preventDefault();
+        applyDaughterLabelVisibility(!stateRef.current.showDaughterLabels);
+        return;
+      }
 
       if ((openWithSlash || openWithShortcut) && !isEditableElement(e.target)) {
         e.preventDefault();
@@ -829,7 +867,7 @@ export default function ConstellationView({
       document.removeEventListener("mousedown", handleGlobalSearchMouseDown);
       document.removeEventListener("keydown", handleGlobalSearchKeyDown);
     };
-  }, [focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery, pdfUrl]);
+  }, [applyDaughterLabelVisibility, focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery, pdfUrl]);
 
   const createNodeElement = useCallback(
     (node: ConstellationNode) => {
@@ -848,12 +886,13 @@ export default function ConstellationView({
       body.className = styles.starBody;
       el.appendChild(body);
 
-      if (node.depth === 0) {
-        const label = document.createElement("div");
-        label.className = styles.starLabel;
-        label.textContent = node.label;
-        el.appendChild(label);
+      const label = document.createElement("div");
+      label.className = styles.starLabel;
+      label.textContent = node.label;
+      if (node.depth > 0 && !s.showDaughterLabels) {
+        label.style.display = "none";
       }
+      el.appendChild(label);
 
       el.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
