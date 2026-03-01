@@ -592,7 +592,7 @@ export default function ConstellationView({
         if (node.paperUrl) {
           chatPaperMetaRef.current.style.display = "";
           chatPaperLinkRef.current.href = node.paperUrl;
-          chatPaperTitleRef.current.textContent = node.paperTitle ?? "View Paper";
+          chatPaperTitleRef.current.textContent = node.paperTitle ?? node.label;
         } else {
           chatPaperMetaRef.current.style.display = "none";
           chatPaperLinkRef.current.removeAttribute("href");
@@ -1560,6 +1560,15 @@ export default function ConstellationView({
     function handleWheel(e: WheelEvent) {
       // Allow native scroll inside the PDF overlay (chat panel, etc.)
       if ((e.target as HTMLElement)?.closest?.('[data-pdf-overlay]')) return;
+
+      const target = e.target as HTMLElement;
+      if (target.closest(`.${styles.sidebar}`)) {
+        if (target.closest(`.${styles.sidebarList}`)) {
+          return; // scroll through projects list natively
+        }
+        e.preventDefault(); // prevent zoom over sidebar (buttons, search) but no scroll
+        return;
+      }
 
       e.preventDefault();
       s.panAnimating = false;
