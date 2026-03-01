@@ -65,17 +65,12 @@ async def _convert_chunk(client: genai.Client, chunk_bytes: bytes, chunk_index: 
     return result.strip()
 
 
-async def convert_pdf_to_markdown(pdf_bytes: bytes) -> str:
-    """
-    Send PDF to Gemini Flash and get back structured markdown.
-
-    Splits large PDFs into 5-page chunks and processes them in parallel
-    (max 3 concurrent) to avoid token limits and improve quality.
-    """
+async def _convert_gemini(pdf_bytes: bytes) -> str:
+    """Convert PDF to markdown using Google Gemini (multimodal)."""
     if not GEMINI_API_KEY:
         raise RuntimeError("No GEMINI_API_KEY set, cannot convert PDF")
 
-    logger.info("[markdown] Sending PDF (%d bytes) to Gemini Flash for conversion", len(pdf_bytes))
+    logger.info("[markdown] Using Gemini backend (%d bytes)", len(pdf_bytes))
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     chunks = _split_pdf_into_chunks(pdf_bytes)
@@ -102,8 +97,14 @@ async def convert_pdf_to_markdown(pdf_bytes: bytes) -> str:
         logger.warning("[markdown] %d/%d chunks were empty, continuing with the rest",
                        empty_count, len(results))
 
-    markdown = "\n\n".join(r for r in results if r)
+    return "\n\n".join(r for r in results if r)
+
+
+async def convert_pdf_to_markdown(pdf_bytes: bytes) -> str:
+    """Convert PDF bytes to structured markdown using Gemini Flash."""
+    markdown = await _convert_gemini(pdf_bytes)
 
     word_count = len(markdown.split())
-    logger.info("[markdown] Conversion complete: %d chars, ~%d words", len(markdown), word_count)
+    logger.info("[markdown] Conversion complete: %d chars, ~%d words",
+                len(markdown), word_count)
     return markdown
