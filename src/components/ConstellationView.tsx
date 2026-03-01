@@ -20,6 +20,7 @@ import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } f
 import { ingestPaper } from "@/app/actions/pipeline";
 import {
   fetchConstellations as fetchConstellationsDB,
+  searchConstellations as searchConstellationsAction,
   upsertConstellation,
   renameConstellation as renameConstellationDB,
   deleteConstellation as deleteConstellationDB,
@@ -44,6 +45,14 @@ import styles from "@/app/constellations/constellations.module.css";
 // ─── Types ───
 type ChatMessageIcon = "bookOpen" | "search";
 type GlobalSearchMessageStatus = "complete" | "loading" | "error";
+
+interface GlobalSearchMessage {
+  id: string;
+  role: "user" | "ai";
+  text: string;
+  sourceArxivIds?: string[];
+  status?: GlobalSearchMessageStatus;
+}
 
 interface ConstellationNode {
   id: number;
@@ -79,14 +88,6 @@ interface EdgeAnim {
   toId: number;
   progress: number;
   startTime: number;
-}
-
-interface GlobalSearchMessage {
-  id: string;
-  role: "user" | "ai";
-  text: string;
-  sourceArxivIds?: string[];
-  status?: GlobalSearchMessageStatus;
 }
 
 const BASE_RADIUS = 140;
@@ -143,10 +144,6 @@ export default function ConstellationView({
   const [renameValue, setRenameValue] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState("");
-  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
-  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
-  const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
-  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfPaperUrl, setPdfPaperUrl] = useState<string>("");
   const [pdfTitle, setPdfTitle] = useState<string>("");
@@ -156,10 +153,24 @@ export default function ConstellationView({
   const [pdfChatQuery, setPdfChatQuery] = useState("");
   const [pdfPanelWidth, setPdfPanelWidth] = useState(65);
   const [chatPaneVisible, setChatPaneVisible] = useState(true);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchMessages, setGlobalSearchMessages] = useState<GlobalSearchMessage[]>([]);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
+  const [sidebarSearchResults, setSidebarSearchResults] = useState<SavedConstellation[]>([]);
+  const [sidebarSearchLoading, setSidebarSearchLoading] = useState(false);
   const paperViewRef = useRef<HTMLDivElement>(null);
 
   const pdfChatMessagesRef = useRef<HTMLDivElement>(null);
   const pdfChatInputRef = useRef<HTMLInputElement>(null);
+  const globalSearchRef = useRef<HTMLDivElement>(null);
+  const globalSearchInputRef = useRef<HTMLInputElement>(null);
+  const globalSearchMessagesRef = useRef<HTMLDivElement>(null);
+  const globalSearchStickToBottomRef = useRef(true);
+  const sidebarSearchInputRef = useRef<HTMLInputElement>(null);
+  const sidebarSearchIdRef = useRef(0);
 
   const currentIdRef = useRef("");
 
@@ -281,10 +292,6 @@ export default function ConstellationView({
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const chatMessagesRootRef = useRef<Root | null>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
-  const globalSearchRef = useRef<HTMLDivElement>(null);
-  const globalSearchInputRef = useRef<HTMLInputElement>(null);
-  const globalSearchMessagesRef = useRef<HTMLDivElement>(null);
-  const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const daughterLabelScaleBucketRef = useRef<number | null>(null);
@@ -812,13 +819,46 @@ export default function ConstellationView({
     setTimeout(() => s.highlights.clear(), 1000);
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const toggleDaughterNamesWithShortcut =
+        e.key === "Enter" && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      if (toggleDaughterNamesWithShortcut && !isEditableElement(e.target)) {
+        e.preventDefault();
+        applyDaughterLabelVisibility(!stateRef.current.showDaughterLabels);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (pdfUrl) {
+          setPdfUrl(null);
+          return;
+        }
+        if (globalSearchOpen) {
+          if (globalSearchQuery.trim()) setGlobalSearchQuery("");
+          else setGlobalSearchOpen(false);
+        }
+        return;
+      }
+      const openWithSlash = e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      const openWithShortcut = (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k";
+      if ((openWithSlash || openWithShortcut) && !isEditableElement(e.target)) {
+        e.preventDefault();
+        setGlobalSearchOpen(true);
+        setTimeout(() => globalSearchInputRef.current?.focus(), 50);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [applyDaughterLabelVisibility, globalSearchOpen, globalSearchQuery, pdfUrl]);
+
   const focusGlobalSearchInput = useCallback(() => {
     requestAnimationFrame(() => {
       const input = globalSearchInputRef.current;
       if (!input) return;
       input.focus();
-      const length = input.value.length;
-      input.setSelectionRange(length, length);
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
     });
   }, []);
 
@@ -830,44 +870,28 @@ export default function ConstellationView({
     setGlobalSearchLoading(true);
     setGlobalSearchQuery("");
     globalSearchStickToBottomRef.current = true;
-    setGlobalSearchMessages((messages) => [
-      ...messages,
+    setGlobalSearchMessages((prev) => [
+      ...prev,
       { id: userId, role: "user", text: trimmed, status: "complete" },
-      {
-        id: assistantId,
-        role: "ai",
-        text: "Searching the constellation...",
-        status: "loading",
-      },
+      { id: assistantId, role: "ai", text: "Searching this constellation...", status: "loading" },
     ]);
     try {
       const { answer, sourceArxivIds } = await ragSearchGlobal(trimmed, currentIdRef.current);
-      setGlobalSearchMessages((messages) =>
-        messages.map((message) =>
-          message.id === assistantId
-            ? {
-              ...message,
-              text: answer,
-              sourceArxivIds,
-              status: "complete",
-            }
-            : message
+      setGlobalSearchMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, text: answer, sourceArxivIds, status: "complete" as const }
+            : m
         )
       );
-      if (sourceArxivIds.length > 0) {
-        highlightNodesByArxivIds(sourceArxivIds);
-      }
+      if (sourceArxivIds.length > 0) highlightNodesByArxivIds(sourceArxivIds);
     } catch (err) {
-      console.error("[constellation] globalSearch failed:", err);
-      setGlobalSearchMessages((messages) =>
-        messages.map((message) =>
-          message.id === assistantId
-            ? {
-              ...message,
-              text: "Something went wrong. Please try again.",
-              status: "error",
-            }
-            : message
+      console.error("[constellation] RAG search failed:", err);
+      setGlobalSearchMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, text: "Something went wrong. Please try again.", status: "error" as const }
+            : m
         )
       );
     } finally {
@@ -878,15 +902,15 @@ export default function ConstellationView({
   const handleGlobalSearchMessagesScroll = useCallback(() => {
     const container = globalSearchMessagesRef.current;
     if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    globalSearchStickToBottomRef.current = distanceFromBottom < 32;
+    const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+    globalSearchStickToBottomRef.current = dist < 32;
   }, []);
 
   useEffect(() => {
     if (!globalSearchOpen) return;
     globalSearchStickToBottomRef.current = true;
     focusGlobalSearchInput();
-  }, [focusGlobalSearchInput, globalSearchOpen]);
+  }, [globalSearchOpen, focusGlobalSearchInput]);
 
   useEffect(() => {
     const container = globalSearchMessagesRef.current;
@@ -895,55 +919,38 @@ export default function ConstellationView({
   }, [globalSearchMessages, globalSearchOpen]);
 
   useEffect(() => {
-    function handleGlobalSearchMouseDown(e: MouseEvent) {
+    function onMouseDown(e: MouseEvent) {
       if (!globalSearchOpen || globalSearchLoading) return;
       const target = e.target as Node | null;
       if (target && globalSearchRef.current?.contains(target)) return;
       setGlobalSearchOpen(false);
     }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [globalSearchOpen, globalSearchLoading]);
 
-    function handleGlobalSearchKeyDown(e: KeyboardEvent) {
-      const openWithSlash =
-        e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
-      const openWithShortcut =
-        (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k";
-      const toggleDaughterNamesWithShortcut =
-        e.key === "Enter" && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
-
-      if (toggleDaughterNamesWithShortcut && !isEditableElement(e.target)) {
-        e.preventDefault();
-        applyDaughterLabelVisibility(!stateRef.current.showDaughterLabels);
-        return;
-      }
-
-      if ((openWithSlash || openWithShortcut) && !isEditableElement(e.target)) {
-        e.preventDefault();
-        setGlobalSearchOpen(true);
-        focusGlobalSearchInput();
-        return;
-      }
-
-      if (e.key === "Escape") {
-        e.preventDefault();
-        // Close PDF viewer first (highest z-index)
-        if (pdfUrl) {
-          setPdfUrl(null);
-          return;
-        }
-        if (globalSearchOpen) {
-          if (globalSearchQuery.trim()) setGlobalSearchQuery("");
-          else setGlobalSearchOpen(false);
-        }
-      }
+  const SIDEBAR_SEARCH_DEBOUNCE_MS = 180;
+  useEffect(() => {
+    const q = sidebarSearchQuery.trim();
+    if (!q) {
+      setSidebarSearchResults([]);
+      return;
     }
+    sidebarSearchIdRef.current += 1;
+    const id = sidebarSearchIdRef.current;
+    setSidebarSearchLoading(true);
+    searchConstellationsAction(q)
+      .then((list) => {
+        if (id === sidebarSearchIdRef.current) setSidebarSearchResults(list);
+      })
+      .finally(() => {
+        if (id === sidebarSearchIdRef.current) setSidebarSearchLoading(false);
+      });
+  }, [sidebarSearchQuery]);
 
-    document.addEventListener("mousedown", handleGlobalSearchMouseDown);
-    document.addEventListener("keydown", handleGlobalSearchKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleGlobalSearchMouseDown);
-      document.removeEventListener("keydown", handleGlobalSearchKeyDown);
-    };
-  }, [applyDaughterLabelVisibility, focusGlobalSearchInput, globalSearchLoading, globalSearchOpen, globalSearchQuery, pdfUrl]);
+  useEffect(() => {
+    if (!sidebarOpen) setSidebarSearchOpen(false);
+  }, [sidebarOpen]);
 
   const createNodeElement = useCallback(
     (node: ConstellationNode) => {
@@ -1884,7 +1891,7 @@ export default function ConstellationView({
         </svg>
       </button>
 
-      {/* ─── Global RAG search ─── */}
+      {/* ─── Search within current constellation (RAG) ─── */}
       <div
         ref={globalSearchRef}
         className={`${styles.globalSearchShell} ${globalSearchOpen ? styles.globalSearchShellOpen : ""}`}
@@ -1905,7 +1912,7 @@ export default function ConstellationView({
                 ref={globalSearchInputRef}
                 className={styles.globalSearchInput}
                 type="text"
-                placeholder="Ask the constellation..."
+                placeholder="Ask this constellation..."
                 autoComplete="off"
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
@@ -1913,31 +1920,28 @@ export default function ConstellationView({
               <button
                 type="submit"
                 className={styles.globalSearchAction}
-                title="Send"
+                title="Search"
                 disabled={!globalSearchQuery.trim() || globalSearchLoading}
               >
                 <SendHorizontal size={14} aria-hidden="true" />
               </button>
-
             </form>
             {globalSearchMessages.length > 0 && (
-              <div className={styles.globalSearchDialog} role="dialog" aria-label="Constellation search">
+              <div className={styles.globalSearchDialog} role="dialog" aria-label="Search this constellation">
                 <div
                   ref={globalSearchMessagesRef}
                   className={styles.globalSearchMessages}
                   onScroll={handleGlobalSearchMessagesScroll}
                 >
-                  {globalSearchMessages.map((message) => (
+                  {globalSearchMessages.map((msg) => (
                     <div
-                      key={message.id}
-                      className={`${styles.globalSearchMessage} ${message.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi
-                        } ${message.status === "error" ? styles.globalSearchMessageError : ""}`}
+                      key={msg.id}
+                      className={`${styles.globalSearchMessage} ${msg.role === "user" ? styles.globalSearchMessageUser : styles.globalSearchMessageAi} ${msg.status === "error" ? styles.globalSearchMessageError : ""}`}
                     >
-                      <div className={styles.globalSearchBubble}>{message.text}</div>
-                      {message.role === "ai" && message.sourceArxivIds && message.sourceArxivIds.length > 0 && (
+                      <div className={styles.globalSearchBubble}>{msg.text}</div>
+                      {msg.role === "ai" && msg.sourceArxivIds && msg.sourceArxivIds.length > 0 && (
                         <div className={styles.globalSearchMeta}>
-                          Found in {message.sourceArxivIds.length} paper
-                          {message.sourceArxivIds.length !== 1 ? "s" : ""}
+                          Found in {msg.sourceArxivIds.length} paper{msg.sourceArxivIds.length !== 1 ? "s" : ""}
                         </div>
                       )}
                     </div>
@@ -1950,7 +1954,7 @@ export default function ConstellationView({
           <button
             type="button"
             className={styles.globalSearchCollapsed}
-            title="Search the constellation"
+            title="Search this constellation"
             aria-expanded={globalSearchOpen}
             onClick={() => {
               setGlobalSearchOpen(true);
@@ -1960,7 +1964,7 @@ export default function ConstellationView({
             <span className={styles.globalSearchLeadingIcon} aria-hidden="true">
               <Search size={16} />
             </span>
-            <span className={styles.globalSearchCollapsedLabel}>Ask the constellation...</span>
+            <span className={styles.globalSearchCollapsedLabel}>Ask this constellation...</span>
             <span className={styles.globalSearchAction} aria-hidden="true">
               <SendHorizontal size={14} />
             </span>
@@ -1993,8 +1997,11 @@ export default function ConstellationView({
           </button>
           <button
             className={styles.sidebarActionBtn}
-            onClick={() => { setGlobalSearchOpen(true); focusGlobalSearchInput(); }}
             title="Search Constellations"
+            onClick={() => {
+              setSidebarSearchOpen((o) => !o);
+              if (!sidebarSearchOpen) setTimeout(() => sidebarSearchInputRef.current?.focus(), 120);
+            }}
           >
             <Search size={18} />
             {sidebarOpen && <span>Search Constellations</span>}
@@ -2003,72 +2010,94 @@ export default function ConstellationView({
         {sidebarOpen && (
           <>
             <div className={styles.sidebarDivider} />
+            <div
+              className={`${styles.sidebarSearchWrap} ${sidebarSearchOpen ? styles.sidebarSearchWrapOpen : ""}`}
+            >
+              <input
+                ref={sidebarSearchInputRef}
+                type="text"
+                className={styles.sidebarSearchInput}
+                placeholder="Find constellation by name or paper..."
+                value={sidebarSearchQuery}
+                onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                aria-label="Find any constellation"
+              />
+            </div>
             <div className={styles.sidebarList}>
-              {constellations.length === 0 && (
-                <div className={styles.sidebarEmpty}>No saved constellations yet.</div>
-              )}
-              {constellations.map((c) => {
-                const isActive = c.id === currentId;
-                const isDeleting = c.id === deletingId;
-                return (
-                  <div
-                    key={c.id}
-                    className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
-                  >
-                    {renaming === c.id ? (
-                      <form
-                        className={styles.sidebarRenameForm}
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          handleRename(c.id);
-                        }}
-                      >
-                        <input
-                          className={styles.sidebarRenameInput}
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          autoFocus
-                          onBlur={() => setRenaming(null)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") setRenaming(null);
-                          }}
-                        />
-                      </form>
-                    ) : (
-                      <button
-                        className={styles.sidebarItemName}
-                        onClick={() => handleSelect(c)}
-                        title={c.topic}
-                      >
-                        {c.name}
-                      </button>
-                    )}
-                    <div className={styles.sidebarItemActions}>
-                      <button
-                        className={styles.sidebarAction}
-                        title="Rename"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRenaming(c.id);
-                          setRenameValue(c.name);
-                        }}
-                      >
-                        <Pencil size={14} aria-hidden="true" />
-                      </button>
-                      <button
-                        className={styles.sidebarAction}
-                        title="Delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(c.id);
-                        }}
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                      </button>
+              {sidebarSearchLoading && sidebarSearchQuery.trim() ? (
+                <div className={styles.sidebarEmpty}>Searching...</div>
+              ) : (() => {
+                const list = sidebarSearchQuery.trim() ? sidebarSearchResults : constellations;
+                if (list.length === 0) {
+                  return (
+                    <div className={styles.sidebarEmpty}>
+                      {sidebarSearchQuery.trim() ? "No constellations match." : "No saved constellations yet."}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                }
+                return list.map((c) => {
+                  const isActive = c.id === currentId;
+                  const isDeleting = c.id === deletingId;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
+                    >
+                      {renaming === c.id ? (
+                        <form
+                          className={styles.sidebarRenameForm}
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleRename(c.id);
+                          }}
+                        >
+                          <input
+                            className={styles.sidebarRenameInput}
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            autoFocus
+                            onBlur={() => setRenaming(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") setRenaming(null);
+                            }}
+                          />
+                        </form>
+                      ) : (
+                        <button
+                          className={styles.sidebarItemName}
+                          onClick={() => handleSelect(c)}
+                          title={c.topic}
+                        >
+                          {c.name}
+                        </button>
+                      )}
+                      <div className={styles.sidebarItemActions}>
+                        <button
+                          className={styles.sidebarAction}
+                          title="Rename"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenaming(c.id);
+                            setRenameValue(c.name);
+                          }}
+                        >
+                          <Pencil size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          className={styles.sidebarAction}
+                          title="Delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(c.id);
+                          }}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </>
         )}

@@ -117,6 +117,53 @@ export async function fetchConstellations(): Promise<SavedConstellation[]> {
   return (data as ConstellationRow[]).map(rowToConstellation);
 }
 
+/** Collect all paper titles and labels from a graph for search. */
+function graphSearchableStrings(row: {
+  name?: string | null;
+  topic?: string | null;
+  paper_title?: string | null;
+  graph_data?: SerializedGraph | null;
+}): string[] {
+  const out: string[] = [];
+  if (row.name) out.push(row.name.toLowerCase());
+  if (row.topic) out.push(row.topic.toLowerCase());
+  if (row.paper_title) out.push(row.paper_title.toLowerCase());
+  const graph = row.graph_data;
+  if (graph?.nodes) {
+    for (const node of graph.nodes) {
+      if (node.paperTitle) out.push(node.paperTitle.toLowerCase());
+      if (node.label) out.push(node.label.toLowerCase());
+    }
+  }
+  return out;
+}
+
+/** Search saved constellations by name, topic, or any paper in the graph (case-insensitive). */
+export async function searchConstellations(query: string): Promise<SavedConstellation[]> {
+  const q = query.trim().toLowerCase();
+  const { data, error } = await supabase
+    .from("constellations")
+    .select("id, title, name, topic, paper_title, paper_url, created_at, updated_at, graph_data")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[constellations] search fetch error:", error);
+    return [];
+  }
+
+  const rows = data as ConstellationRow[];
+  const list = rows.map(rowToConstellation);
+
+  if (!q) return list;
+
+  return list.filter((c, i) => {
+    const row = rows[i];
+    if (!row) return false;
+    const searchable = graphSearchableStrings(row);
+    return searchable.some((s) => s.includes(q));
+  });
+}
+
 export async function upsertConstellation(c: SavedConstellation): Promise<void> {
   const now = new Date(c.createdAt).toISOString();
   const name = normalizeRequiredTitle(c.name, c.name || "Untitled");

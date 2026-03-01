@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { searchTopicWithPaper, resolveUrlToPaper } from "@/app/actions/search";
 import ConstellationView from "@/components/ConstellationView";
 import ConstellationSidebar from "@/components/ConstellationSidebar";
+import ConstellationSearchBar from "@/components/ConstellationSearchBar";
 import { normalizePaperTitle, normalizeRequiredTitle } from "@/lib/papers";
 import styles from "./home.module.css";
 
@@ -231,8 +232,11 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#060a14]">
-      {/* ─── Sidebar (always visible) ─── */}
+      {/* ─── Sidebar (landing only) ─── */}
       {phase === "landing" && <ConstellationSidebar />}
+
+      {/* ─── Search your constellations (landing: main page search bar) ─── */}
+      {phase === "landing" && <ConstellationSearchBar />}
 
       {/* ─── Constellation layer (mounts after transition) ─── */}
       {phase === "constellation" && (
