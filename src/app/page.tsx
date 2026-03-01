@@ -135,7 +135,7 @@ export default function Home() {
   const [displayTopic, setDisplayTopic] = useState("");
   const [collapseProgress, setCollapseProgress] = useState(0);
   const [transitionStarActive, setTransitionStarActive] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchInFlight, setSearchInFlight] = useState(false);
   const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -156,6 +156,7 @@ export default function Home() {
     if (phase === "landing") {
       setCollapseProgress(0);
       setTransitionStarActive(false);
+      setSearchInFlight(false);
       return;
     }
     if (phase !== "collapsing") return;
@@ -177,6 +178,7 @@ export default function Home() {
     const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
     setConstellationId(id);
     setPhase("collapsing");
+    setSearchInFlight(true);
 
     const inputIsUrl = isUrl(query.trim());
 
@@ -185,6 +187,7 @@ export default function Home() {
           paper ? { results: [], pickedPaper: paper } : null
         ).catch(() => null)
       : searchTopicWithPaper(query).catch(() => null);
+    search.finally(() => setSearchInFlight(false));
 
     const minDelay = new Promise<void>((r) => setTimeout(r, 1600));
 
@@ -319,15 +322,19 @@ export default function Home() {
 
       {/* ─── Transition star (bridges landing → constellation) ─── */}
       {(showStar || starFading) && (
-        <div
-          className={`${styles.starWrapper} ${starFading ? styles.starWrapperFading : ""}`}
-        >
-          <div className={`${styles.transitionStarInner} ${transitionStarActive ? styles.starWrapperActive : ""}`}>
+          <div
+            className={`${styles.starWrapper} ${starFading ? styles.starWrapperFading : ""}`}
+          >
+          <div
+            className={`${styles.transitionStarInner} ${transitionStarActive ? styles.starWrapperActive : ""}`}
+          >
             <div className={styles.transitionStarFlash} aria-hidden />
             <div className={styles.transitionStarRing} aria-hidden />
-            <div
-              className={`${styles.transitionStar} ${transitionStarActive ? styles.starActive : ""}`}
-            />
+            <div className={`${styles.transitionStarSpinLayer} ${transitionStarActive && searchInFlight ? styles.starSpinActive : ""}`}>
+              <div
+                className={`${styles.transitionStar} ${transitionStarActive ? styles.starActive : ""} ${transitionStarActive && searchInFlight ? styles.starSearching : ""}`}
+              />
+            </div>
           </div>
         </div>
       )}
