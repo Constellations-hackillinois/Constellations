@@ -1239,19 +1239,19 @@ export default function ConstellationView({
 
     function initStars() {
       s.stars = [];
-      const count = Math.floor(
-        (starCanvas.width * starCanvas.height) / 2800
-      );
+      const w = starCanvas.width;
+      const h = starCanvas.height;
+      const count = Math.floor((w * h) / 1400);
       for (let i = 0; i < count; i++) {
         const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
         s.stars.push({
-          x: Math.random() * starCanvas.width,
-          y: Math.random() * starCanvas.height,
-          r: Math.random() * 1.4 + 0.3,
+          x: Math.random() * w,
+          y: Math.random() * h,
+          r: Math.random() * 1.5 + 0.2,
           phase: Math.random() * Math.PI * 2,
           speed: Math.random() * 0.8 + 0.3,
-          baseAlpha: Math.random() * 0.5 + 0.15,
-          depth: Math.random() * 0.12 + 0.03,
+          baseAlpha: Math.random() * 0.45 + 0.08,
+          depth: Math.random() * 0.15 + 0.02,
           tint,
         });
       }
@@ -1515,9 +1515,12 @@ export default function ConstellationView({
     chat.addEventListener("mouseleave", chatLeave);
 
     function drawStarField(time: number) {
-      starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
       const w = starCanvas.width;
       const h = starCanvas.height;
+
+      starCtx.clearRect(0, 0, w, h);
+
+      // Stars (parallax: move with pan via depth)
       for (const star of s.stars) {
         const alpha =
           star.baseAlpha +
@@ -1710,6 +1713,12 @@ export default function ConstellationView({
       originNode.paperUrl = normalizedPaperUrl;
       if (normalizedPaperUrl) {
         ingestPaper(normalizedPaperUrl, normalizedPaperTitle, currentIdRef.current);
+      }
+      if (originNode.el) {
+        originNode.el.style.setProperty("--ignition-delay", "280ms");
+        originNode.el.classList.add(styles.igniting);
+        const el = originNode.el;
+        setTimeout(() => el.classList.remove(styles.igniting), 950);
       }
     }
 

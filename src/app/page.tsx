@@ -16,7 +16,11 @@ const SUGGESTIONS = [
   "Graph neural networks",
 ];
 
-function Starfield() {
+function easeInCubic(t: number): number {
+  return t * t * t;
+}
+
+function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -24,43 +28,73 @@ function Starfield() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
 
+    const STAR_TINTS = [
+      [255, 255, 255],
+      [255, 255, 255],
+      [255, 248, 240],
+      [255, 216, 102],
+      [200, 230, 255],
+      [126, 200, 227],
+      [220, 200, 255],
+    ];
+
+    let stars: { x: number; y: number; r: number; phase: number; speed: number; base: number; tint: number[]; spiral: number }[] = [];
+
     function resize() {
-      canvas!.width = window.innerWidth;
-      canvas!.height = window.innerHeight;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const w = canvas.width;
+      const h = canvas.height;
+      const count = 280;
+      stars = Array.from({ length: count }, () => {
+        const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
+        return {
+          x: Math.random() * w,
+          y: Math.random() * h,
+          r: Math.random() * 1.3 + 0.2,
+          phase: Math.random() * Math.PI * 2,
+          speed: Math.random() * 0.5 + 0.2,
+          base: Math.random() * 0.35 + 0.08,
+          tint,
+          spiral: (Math.random() - 0.5) * 2,
+        };
+      });
     }
     resize();
     window.addEventListener("resize", resize);
 
-    const STAR_TINTS = [
-      [255, 255, 255],   // white
-      [255, 255, 255],   // white (common)
-      [255, 240, 220],   // warm white
-      [255, 216, 102],   // gold
-      [180, 220, 255],   // cool blue
-      [126, 200, 227],   // constellation blue
-      [220, 200, 255],   // lavender
-    ];
-
-    const stars = Array.from({ length: 280 }, () => {
-      const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
-      return {
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        r: Math.random() * 1.3 + 0.2,
-        phase: Math.random() * Math.PI * 2,
-        speed: Math.random() * 0.5 + 0.2,
-        base: Math.random() * 0.35 + 0.08,
-        tint,
-      };
-    });
-
     let raf: number;
     function draw(t: number) {
-      ctx.clearRect(0, 0, canvas!.width, canvas!.height);
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      ctx.clearRect(0, 0, w, h);
+
+      const progress = Math.min(1, collapseProgress);
+      const eased = easeInCubic(progress);
+
       for (const s of stars) {
-        const a = s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15;
+        let dx: number;
+        let dy: number;
+        let a: number;
+        if (eased <= 0) {
+          dx = s.x;
+          dy = s.y;
+          a = s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15;
+        } else {
+          const spiralAngle = s.spiral * eased * Math.PI * 2;
+          const perpX = s.x - cx;
+          const perpY = s.y - cy;
+          const rotatedX = cx + perpX * Math.cos(spiralAngle) - perpY * Math.sin(spiralAngle);
+          const rotatedY = cy + perpX * Math.sin(spiralAngle) + perpY * Math.cos(spiralAngle);
+          dx = s.x + (rotatedX - s.x) * eased;
+          dy = s.y + (rotatedY - s.y) * eased;
+          a = (s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15) * (1 - eased);
+        }
         ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.arc(dx, dy, s.r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${s.tint[0]},${s.tint[1]},${s.tint[2]},${Math.max(0.03, a)})`;
         ctx.fill();
       }
@@ -72,7 +106,7 @@ function Starfield() {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [collapseProgress]);
 
   return (
     <canvas
@@ -93,6 +127,8 @@ export default function Home() {
   const [starFading, setStarFading] = useState(false);
   const [constellationId, setConstellationId] = useState<string | undefined>();
   const [displayTopic, setDisplayTopic] = useState("");
+  const [collapseProgress, setCollapseProgress] = useState(0);
+  const [transitionStarActive, setTransitionStarActive] = useState(false);
   const landingGlowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -106,6 +142,17 @@ export default function Home() {
     document.addEventListener("mousemove", handleGlow);
     return () => document.removeEventListener("mousemove", handleGlow);
   }, []);
+
+  useEffect(() => {
+    if (phase === "landing") {
+      setCollapseProgress(0);
+      setTransitionStarActive(false);
+      return;
+    }
+    if (phase !== "collapsing") return;
+    const starDelay = setTimeout(() => setTransitionStarActive(true), 400);
+    return () => clearTimeout(starDelay);
+  }, [phase]);
 
   function isUrl(text: string): boolean {
     try {
@@ -195,7 +242,7 @@ export default function Home() {
       {/* ─── Landing layer ─── */}
       {showLanding && (
         <>
-          <Starfield />
+          <Starfield collapseProgress={collapseProgress} />
 
           <div
             className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6`}
@@ -308,9 +355,13 @@ export default function Home() {
         <div
           className={`${styles.starWrapper} ${starFading ? styles.starWrapperFading : ""}`}
         >
-          <div
-            className={`${styles.transitionStar} ${phase !== "landing" ? styles.starActive : ""}`}
-          />
+          <div className={`${styles.transitionStarInner} ${transitionStarActive ? styles.starWrapperActive : ""}`}>
+            <div className={styles.transitionStarFlash} aria-hidden />
+            <div className={styles.transitionStarRing} aria-hidden />
+            <div
+              className={`${styles.transitionStar} ${transitionStarActive ? styles.starActive : ""}`}
+            />
+          </div>
         </div>
       )}
     </div>
