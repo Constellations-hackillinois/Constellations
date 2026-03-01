@@ -3,7 +3,6 @@
 import { useEffect, useRef, useCallback, useState, type FormEvent } from "react";
 import {
   BookOpen,
-  ExternalLink,
   House,
   FileText,
   PanelLeftClose,
@@ -14,7 +13,6 @@ import {
   Search,
   SendHorizontal,
   Trash2,
-  X,
 } from "lucide-react";
 import { followUpSearch, expandSearch, resolveUrlToPaper, type ExpandSearchResult } from "@/app/actions/search";
 import { ragSearchPerPaper, ragSearchGlobal, removeDocumentFromConstellation } from "@/app/actions/supermemory";
@@ -2267,23 +2265,7 @@ export default function ConstellationView({
             style={{ width: chatPaneVisible ? `${pdfPanelWidth}%` : '100%' }}
           >
             <div className={styles.paperHeader}>
-              <button
-                className={styles.paperBackBtn}
-                onClick={() => setPdfUrl(null)}
-                title="Back to constellation"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
               <h1 className={styles.paperTitleText}>{pdfTitle}</h1>
-              <a
-                href={pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.paperExternalLink}
-                title="Open in new tab"
-              >
-                <ExternalLink size={14} aria-hidden="true" />
-              </a>
               {!chatPaneVisible && (
                 <button
                   className={styles.paperChatToggle}
@@ -2353,16 +2335,6 @@ export default function ConstellationView({
               className={styles.chatPane}
               style={{ width: `${100 - pdfPanelWidth}%` }}
             >
-              <div className={styles.chatPaneHeader}>
-                <span className={styles.chatPaneHeaderTitle}>Chat with this paper</span>
-                <button
-                  className={styles.chatPaneCollapseBtn}
-                  onClick={() => setChatPaneVisible(false)}
-                  title="Close chat"
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
-              </div>
               <div ref={pdfChatMessagesRef} className={styles.chatPaneMessages}>
                 {pdfChatMessages.length === 0 ? (
                   <div className={styles.chatPaneEmpty}>
