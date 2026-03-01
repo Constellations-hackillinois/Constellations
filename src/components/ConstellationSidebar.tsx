@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
+  Search,
   Trash2,
 } from "lucide-react";
 import {
   fetchConstellations as fetchConstellationsDB,
+  searchConstellations as searchConstellationsAction,
   renameConstellation as renameConstellationDB,
   deleteConstellation as deleteConstellationDB,
   type SavedConstellation,
@@ -27,10 +29,38 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
+  const [sidebarSearchResults, setSidebarSearchResults] = useState<SavedConstellation[]>([]);
+  const [sidebarSearchLoading, setSidebarSearchLoading] = useState(false);
+  const sidebarSearchInputRef = useRef<HTMLInputElement>(null);
+  const sidebarSearchIdRef = useRef(0);
 
   useEffect(() => {
     fetchConstellationsDB().then(setConstellations);
   }, []);
+
+  useEffect(() => {
+    const q = sidebarSearchQuery.trim();
+    if (!q) {
+      setSidebarSearchResults([]);
+      return;
+    }
+    sidebarSearchIdRef.current += 1;
+    const id = sidebarSearchIdRef.current;
+    setSidebarSearchLoading(true);
+    searchConstellationsAction(q)
+      .then((list) => {
+        if (id === sidebarSearchIdRef.current) setSidebarSearchResults(list);
+      })
+      .finally(() => {
+        if (id === sidebarSearchIdRef.current) setSidebarSearchLoading(false);
+      });
+  }, [sidebarSearchQuery]);
+
+  useEffect(() => {
+    if (!open) setSidebarSearchOpen(false);
+  }, [open]);
 
   function handleRename(id: string) {
     if (!renameValue.trim()) return;
@@ -86,76 +116,109 @@ export default function ConstellationSidebar({ activeId }: ConstellationSidebarP
           <Plus size={18} />
           {open && <span>New Constellation</span>}
         </button>
+        <button
+          className={styles.sidebarActionBtn}
+          title="Search Constellations"
+          onClick={() => {
+            setSidebarSearchOpen((o) => !o);
+            if (!sidebarSearchOpen) setTimeout(() => sidebarSearchInputRef.current?.focus(), 120);
+          }}
+        >
+          <Search size={18} />
+          {open && <span>Search Constellations</span>}
+        </button>
       </div>
       {open && (
         <>
           <div className={styles.sidebarDivider} />
+          <div
+            className={`${styles.sidebarSearchWrap} ${sidebarSearchOpen ? styles.sidebarSearchWrapOpen : ""}`}
+          >
+            <input
+              ref={sidebarSearchInputRef}
+              type="text"
+              className={styles.sidebarSearchInput}
+              placeholder="Find constellation by name or paper..."
+              value={sidebarSearchQuery}
+              onChange={(e) => setSidebarSearchQuery(e.target.value)}
+              aria-label="Find any constellation"
+            />
+          </div>
           <div className={styles.sidebarList}>
-            {constellations.length === 0 && (
-              <div className={styles.sidebarEmpty}>No saved constellations yet.</div>
-            )}
-            {constellations.map((c) => {
-              const isActive = c.id === activeId;
-              const isDeleting = c.id === deletingId;
-              return (
-                <div
-                  key={c.id}
-                  className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
-                >
-                  {renaming === c.id ? (
-                    <form
-                      className={styles.sidebarRenameForm}
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleRename(c.id);
-                      }}
-                    >
-                      <input
-                        className={styles.sidebarRenameInput}
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        autoFocus
-                        onBlur={() => setRenaming(null)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") setRenaming(null);
-                        }}
-                      />
-                    </form>
-                  ) : (
-                    <button
-                      className={styles.sidebarItemName}
-                      onClick={() => handleSelect(c)}
-                      title={c.topic}
-                    >
-                      {c.name}
-                    </button>
-                  )}
-                  <div className={styles.sidebarItemActions}>
-                    <button
-                      className={styles.sidebarAction}
-                      title="Rename"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRenaming(c.id);
-                        setRenameValue(c.name);
-                      }}
-                    >
-                      <Pencil size={14} aria-hidden="true" />
-                    </button>
-                    <button
-                      className={styles.sidebarAction}
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(c.id);
-                      }}
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </button>
+            {sidebarSearchLoading && sidebarSearchQuery.trim() ? (
+              <div className={styles.sidebarEmpty}>Searching...</div>
+            ) : (() => {
+              const list = sidebarSearchQuery.trim() ? sidebarSearchResults : constellations;
+              if (list.length === 0) {
+                return (
+                  <div className={styles.sidebarEmpty}>
+                    {sidebarSearchQuery.trim() ? "No constellations match." : "No saved constellations yet."}
                   </div>
-                </div>
-              );
-            })}
+                );
+              }
+              return list.map((c) => {
+                const isActive = c.id === activeId;
+                const isDeleting = c.id === deletingId;
+                return (
+                  <div
+                    key={c.id}
+                    className={`${styles.sidebarItem} ${isActive ? styles.sidebarItemActive : ""} ${isDeleting ? styles.sidebarItemRemoving : ""}`}
+                  >
+                    {renaming === c.id ? (
+                      <form
+                        className={styles.sidebarRenameForm}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleRename(c.id);
+                        }}
+                      >
+                        <input
+                          className={styles.sidebarRenameInput}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          autoFocus
+                          onBlur={() => setRenaming(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setRenaming(null);
+                          }}
+                        />
+                      </form>
+                    ) : (
+                      <button
+                        className={styles.sidebarItemName}
+                        onClick={() => handleSelect(c)}
+                        title={c.topic}
+                      >
+                        {c.name}
+                      </button>
+                    )}
+                    <div className={styles.sidebarItemActions}>
+                      <button
+                        className={styles.sidebarAction}
+                        title="Rename"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenaming(c.id);
+                          setRenameValue(c.name);
+                        }}
+                      >
+                        <Pencil size={14} aria-hidden="true" />
+                      </button>
+                      <button
+                        className={styles.sidebarAction}
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(c.id);
+                        }}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </>
       )}
