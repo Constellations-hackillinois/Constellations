@@ -848,7 +848,7 @@ export default function ConstellationView({
       {
         id: assistantId,
         role: "ai",
-        text: "Searching the knowledge graph...",
+        text: "Searching the constellation...",
         status: "loading",
       },
     ]);
@@ -1926,7 +1926,7 @@ export default function ConstellationView({
                 ref={globalSearchInputRef}
                 className={styles.globalSearchInput}
                 type="text"
-                placeholder="Ask the knowledge graph..."
+                placeholder="Ask the constellation..."
                 autoComplete="off"
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
@@ -1942,7 +1942,7 @@ export default function ConstellationView({
 
             </form>
             {globalSearchMessages.length > 0 && (
-              <div className={styles.globalSearchDialog} role="dialog" aria-label="Knowledge graph search">
+              <div className={styles.globalSearchDialog} role="dialog" aria-label="Constellation search">
                 <div
                   ref={globalSearchMessagesRef}
                   className={styles.globalSearchMessages}
@@ -1971,7 +1971,7 @@ export default function ConstellationView({
           <button
             type="button"
             className={styles.globalSearchCollapsed}
-            title="Search the knowledge graph"
+            title="Search the constellation"
             aria-expanded={globalSearchOpen}
             onClick={() => {
               setGlobalSearchOpen(true);
@@ -1981,7 +1981,7 @@ export default function ConstellationView({
             <span className={styles.globalSearchLeadingIcon} aria-hidden="true">
               <Search size={16} />
             </span>
-            <span className={styles.globalSearchCollapsedLabel}>Ask the knowledge graph...</span>
+            <span className={styles.globalSearchCollapsedLabel}>Ask the constellation...</span>
             <span className={styles.globalSearchAction} aria-hidden="true">
               <SendHorizontal size={14} />
             </span>
@@ -2275,7 +2275,7 @@ export default function ConstellationView({
                       <BookOpen size={32} aria-hidden="true" />
                     </div>
                     <p>Ask any question about this paper</p>
-                    <p className={styles.chatPaneEmptySub}>Answers are powered by the knowledge graph.</p>
+                    <p className={styles.chatPaneEmptySub}>Answers are powered by the constellation.</p>
                   </div>
                 ) : (
                   pdfChatMessages.map((msg) => (
