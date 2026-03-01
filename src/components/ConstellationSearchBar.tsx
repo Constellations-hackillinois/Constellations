@@ -126,6 +126,7 @@ function ConstellationSearchBarInner(
             />
             <button
               type="submit"
+              
               className={styles.globalSearchAction}
               title="Search"
               disabled={loading}

@@ -45,6 +45,7 @@ export default function ConstellationSidebar({ activeId, onOpenChange }: Constel
     const q = sidebarSearchQuery.trim();
     if (!q) {
       setSidebarSearchResults([]);
+      console.log("search");
       return;
     }
     sidebarSearchIdRef.current += 1;
