@@ -20,7 +20,15 @@ function easeInCubic(t: number): number {
   return t * t * t;
 }
 
-function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
+const PARALLAX_STRENGTH = 70;
+
+function Starfield({
+  collapseProgress = 0,
+  mouseOffsetRef,
+}: {
+  collapseProgress?: number;
+  mouseOffsetRef?: React.RefObject<{ x: number; y: number } | null>;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -38,14 +46,14 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
       [220, 200, 255],
     ];
 
-    let stars: { x: number; y: number; r: number; phase: number; speed: number; base: number; tint: number[]; spiral: number }[] = [];
+    let stars: { x: number; y: number; r: number; phase: number; speed: number; base: number; tint: number[]; spiral: number; depth: number }[] = [];
 
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
       const w = canvas.width;
       const h = canvas.height;
-      const count = 280;
+      const count = Math.floor((w * h) / 450);
       stars = Array.from({ length: count }, () => {
         const tint = STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)];
         return {
@@ -57,6 +65,7 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
           base: Math.random() * 0.35 + 0.08,
           tint,
           spiral: (Math.random() - 0.5) * 2,
+          depth: Math.random() * 0.14 + 0.02,
         };
       });
     }
@@ -70,6 +79,10 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
       const cx = w / 2;
       const cy = h / 2;
 
+      const mouse = mouseOffsetRef?.current;
+      const mx = mouse ? mouse.x * PARALLAX_STRENGTH : 0;
+      const my = mouse ? mouse.y * PARALLAX_STRENGTH : 0;
+
       ctx.clearRect(0, 0, w, h);
 
       const progress = Math.min(1, collapseProgress);
@@ -80,8 +93,8 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
         let dy: number;
         let a: number;
         if (eased <= 0) {
-          dx = s.x;
-          dy = s.y;
+          dx = s.x + mx * s.depth;
+          dy = s.y + my * s.depth;
           a = s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15;
         } else {
           const spiralAngle = s.spiral * eased * Math.PI * 2;
@@ -89,8 +102,8 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
           const perpY = s.y - cy;
           const rotatedX = cx + perpX * Math.cos(spiralAngle) - perpY * Math.sin(spiralAngle);
           const rotatedY = cy + perpX * Math.sin(spiralAngle) + perpY * Math.cos(spiralAngle);
-          dx = s.x + (rotatedX - s.x) * eased;
-          dy = s.y + (rotatedY - s.y) * eased;
+          dx = s.x + (rotatedX - s.x) * eased + mx * s.depth;
+          dy = s.y + (rotatedY - s.y) * eased + my * s.depth;
           a = (s.base + Math.sin(t * 0.001 * s.speed + s.phase) * 0.15) * (1 - eased);
         }
         ctx.beginPath();
@@ -106,7 +119,7 @@ function Starfield({ collapseProgress = 0 }: { collapseProgress?: number }) {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
-  }, [collapseProgress]);
+  }, [collapseProgress, mouseOffsetRef]);
 
   return (
     <canvas
@@ -129,18 +142,20 @@ export default function Home() {
   const [displayTopic, setDisplayTopic] = useState("");
   const [collapseProgress, setCollapseProgress] = useState(0);
   const [transitionStarActive, setTransitionStarActive] = useState(false);
-  const landingGlowRef = useRef<HTMLDivElement>(null);
+  const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     setMounted(true);
-    function handleGlow(e: MouseEvent) {
-      if (landingGlowRef.current) {
-        landingGlowRef.current.style.background =
-          `radial-gradient(600px circle at ${e.clientX}px ${e.clientY}px, rgba(255,216,102,0.04), rgba(126,200,227,0.018) 50%, transparent 80%)`;
-      }
+    function handleMouseMove(e: MouseEvent) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      mouseOffsetRef.current = {
+        x: (e.clientX - w / 2) / (w / 2),
+        y: (e.clientY - h / 2) / (h / 2),
+      };
     }
-    document.addEventListener("mousemove", handleGlow);
-    return () => document.removeEventListener("mousemove", handleGlow);
+    document.addEventListener("mousemove", handleMouseMove);
+    return () => document.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
   useEffect(() => {
@@ -231,18 +246,10 @@ export default function Home() {
         </div>
       )}
 
-      {/* ─── Mouse glow (always active on landing) ─── */}
-      {showLanding && (
-        <div
-          ref={landingGlowRef}
-          className="fixed inset-0 z-[1] pointer-events-none"
-        />
-      )}
-
       {/* ─── Landing layer ─── */}
       {showLanding && (
         <>
-          <Starfield collapseProgress={collapseProgress} />
+          <Starfield collapseProgress={collapseProgress} mouseOffsetRef={mouseOffsetRef} />
 
           <div
             className={`relative z-[2] flex min-h-screen flex-col items-center justify-center px-6`}
