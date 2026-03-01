@@ -288,8 +288,8 @@ export default function ConstellationView({
   const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const daughterLabelWidthChRef = useRef<number | null>(null);
-  const daughterLabelFontPxRef = useRef<number | null>(null);
+  const daughterLabelScaleBucketRef = useRef<number | null>(null);
+  const graphZoomRef = useRef<number | null>(null);
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -393,32 +393,55 @@ export default function ConstellationView({
   const updateNodePosition = useCallback(
     (node: ConstellationNode) => {
       if (!node.el) return;
-      const pos = toScreen(node.x, node.y);
-      node.el.style.left = pos.x + "px";
-      node.el.style.top = pos.y + "px";
+      node.el.style.left = node.x + "px";
+      node.el.style.top = node.y + "px";
     },
-    [toScreen]
+    []
   );
 
-  const updateDaughterLabelWidthByZoom = useCallback(() => {
+  const updateDaughterLabelStyleByZoom = useCallback(() => {
     const container = nodesRef.current;
     if (!container) return;
 
     const zoom = Math.max(0.3, Math.min(3.0, stateRef.current.zoom));
-    const widthCh = Math.max(12, Math.min(28, Math.round(20 * Math.pow(zoom, 0.7))));
-    const fontPx = Math.max(8, Math.min(11, Number((9.5 * Math.pow(zoom, 0.35)).toFixed(2))));
-    if (daughterLabelWidthChRef.current === widthCh && daughterLabelFontPxRef.current === fontPx) return;
+    const graphZoom = Number(zoom.toFixed(3));
+    if (graphZoomRef.current !== graphZoom) {
+      graphZoomRef.current = graphZoom;
+      container.style.setProperty("--graph-zoom", String(graphZoom));
+    }
 
-    daughterLabelWidthChRef.current = widthCh;
-    daughterLabelFontPxRef.current = fontPx;
+    const bucket =
+      zoom >= 2.1 ? 7 :
+        zoom >= 1.7 ? 6 :
+          zoom >= 1.35 ? 5 :
+            zoom >= 1.1 ? 4 :
+              zoom >= 0.9 ? 3 :
+                zoom >= 0.72 ? 2 :
+                  zoom >= 0.56 ? 1 : 0;
+    if (daughterLabelScaleBucketRef.current === bucket) return;
+
+    daughterLabelScaleBucketRef.current = bucket;
+    const widthByBucket = [12, 14, 16, 18, 20, 23, 26, 28];
+    const fontByBucket = [7.8, 8.6, 9.6, 10.6, 11.4, 12.2, 12.8, 13.2];
+    const widthCh = widthByBucket[bucket];
+    const fontPx = fontByBucket[bucket];
     container.style.setProperty("--daughter-label-ch", String(widthCh));
     container.style.setProperty("--daughter-label-font-px", String(fontPx));
   }, []);
 
+  const updateViewportTransform = useCallback(() => {
+    const container = nodesRef.current;
+    if (!container) return;
+
+    const s = stateRef.current;
+    updateDaughterLabelStyleByZoom();
+    container.style.transform = `translate3d(${s.panX + cx()}px, ${s.panY + cy()}px, 0) scale(${s.zoom})`;
+  }, [cx, cy, updateDaughterLabelStyleByZoom]);
+
   const updateAllPositions = useCallback(() => {
-    updateDaughterLabelWidthByZoom();
+    updateViewportTransform();
     stateRef.current.nodes.forEach((n) => updateNodePosition(n));
-  }, [updateDaughterLabelWidthByZoom, updateNodePosition]);
+  }, [updateNodePosition, updateViewportTransform]);
 
   const applyDaughterLabelVisibility = useCallback((visible: boolean) => {
     const s = stateRef.current;
@@ -1269,7 +1292,7 @@ export default function ConstellationView({
         minimapCanvas.height = MINIMAP_H;
       }
       initStars();
-      updateAllPositions();
+      updateViewportTransform();
     }
 
     function getViewportBounds() {
@@ -1428,7 +1451,7 @@ export default function ConstellationView({
       if (!s.isDragging) return;
       s.panX = s.panStartX + (e.clientX - s.dragStartX);
       s.panY = s.panStartY + (e.clientY - s.dragStartY);
-      updateAllPositions();
+      updateViewportTransform();
     }
 
     function handleMouseUp() {
@@ -1489,7 +1512,7 @@ export default function ConstellationView({
       s.panX = mx - (mx - s.panX) * (s.zoom / oldZoom);
       s.panY = my - (my - s.panY) * (s.zoom / oldZoom);
 
-      updateAllPositions();
+      updateViewportTransform();
     }
 
 
@@ -1654,7 +1677,7 @@ export default function ConstellationView({
         s.panX = s.panAnimFromX + (s.panTargetX - s.panAnimFromX) * e;
         s.panY = s.panAnimFromY + (s.panTargetY - s.panAnimFromY) * e;
         s.zoom = s.zoomAnimFrom + (s.zoomTarget - s.zoomAnimFrom) * e;
-        updateAllPositions();
+        updateViewportTransform();
         if (t >= 1) s.panAnimating = false;
       }
 

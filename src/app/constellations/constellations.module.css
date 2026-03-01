@@ -62,6 +62,8 @@
   height: 100%;
   z-index: 2;
   pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 /* ─── Home button ─── */
@@ -482,7 +484,12 @@
 
 .starNode:not(.depth0) .starLabel {
   width: min(calc(var(--daughter-label-ch, 20) * 1ch), 50vw);
-  font-size: calc(var(--daughter-label-font-px, 11) * 1px);
+  font-size: calc(var(--daughter-label-font-px, 13.2) * 1px);
+  transform: translateX(-50%) scale(calc(1 / var(--graph-zoom, 1)));
+  transform-origin: top center;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
 
 .starNode:hover .starLabel {
