@@ -136,6 +136,7 @@ export default function Home() {
   const [collapseProgress, setCollapseProgress] = useState(0);
   const [transitionStarActive, setTransitionStarActive] = useState(false);
   const [searchInFlight, setSearchInFlight] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const mouseOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
