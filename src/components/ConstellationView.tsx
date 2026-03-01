@@ -595,20 +595,9 @@ export default function ConstellationView({
   const showChat = useCallback(
     (id: number) => {
       const s = stateRef.current;
-      if (!s.nodes.has(id)) return;
+      const node = s.nodes.get(id);
+      if (!node) return;
       s.chatNodeId = id;
-      if (chatHeaderRef.current) chatHeaderRef.current.textContent = node.label;
-      if (chatPaperMetaRef.current && chatPaperLinkRef.current && chatPaperTitleRef.current) {
-        if (node.paperUrl) {
-          chatPaperMetaRef.current.style.display = "";
-          chatPaperLinkRef.current.href = node.paperUrl;
-          chatPaperTitleRef.current.textContent = node.paperTitle ?? node.label;
-        } else {
-          chatPaperMetaRef.current.style.display = "none";
-          chatPaperLinkRef.current.removeAttribute("href");
-          chatPaperTitleRef.current.textContent = "";
-        }
-      }
 
       const chat = chatRef.current;
       if (chat) {
