@@ -1103,7 +1103,7 @@ export default function ConstellationView({
       }
 
       try {
-        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
+        const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current, parent.depth);
 
         if (frontier?.isFrontier) {
           parent.isFrontier = true;
