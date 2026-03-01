@@ -1065,7 +1065,7 @@ export default function ConstellationView({
 
   createNodeRef.current = createNode;
 
-  const expandNodeRef = useRef<(id: number) => void>(() => { });
+  const expandNodeRef = useRef<(id: number) => Promise<void>>(async () => { });
 
   const expandNode = useCallback(
     async (id: number) => {
@@ -1076,7 +1076,6 @@ export default function ConstellationView({
         return;
       }
       if (parent.isFrontier) {
-        showChat(id);
         return;
       }
 
@@ -1084,30 +1083,28 @@ export default function ConstellationView({
       const pTitle = parent.paperTitle ?? parent.label;
       const pUrl = parent.paperUrl ?? "";
 
-      if (parent.el) parent.el.style.opacity = "0.6";
+      traceGenerationPathToRoot(id);
+      if (parent.el) {
+        parent.el.classList.add(styles.followUpLoading);
+      }
 
       try {
         const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
 
-        if (parent.el) parent.el.style.opacity = "1";
-
         if (frontier?.isFrontier) {
           parent.isFrontier = true;
           parent.frontierReason = frontier.reason;
-          parent.expanding = false;
           if (parent.el) {
             parent.el.classList.add(styles.frontierNode);
             parent.el.classList.add(styles.frontierRevealing);
             setTimeout(() => parent.el?.classList.remove(styles.frontierRevealing), 1200);
           }
           parent.messages.push({ role: "ai", text: `This paper is at the research frontier. ${frontier.reason}`, icon: "search" });
-          showChat(id);
           flushGraph();
           return;
         }
 
         if (papers.length === 0) {
-          parent.expanding = false;
           return;
         }
 
@@ -1188,10 +1185,15 @@ export default function ConstellationView({
         flushGraph();
       } catch (err) {
         console.error("[constellation] expandSearch failed:", err);
-        if (parent.el) parent.el.style.opacity = "1";
+      } finally {
+        parent.expanding = false;
+        if (parent.el) {
+          parent.el.classList.remove(styles.followUpLoading);
+        }
+        clearGenerationTrace();
       }
     },
-    [highlightSubtree, flushGraph]
+    [clearGenerationTrace, flushGraph, highlightSubtree, traceGenerationPathToRoot]
   );
 
   expandNodeRef.current = expandNode;
@@ -2082,7 +2084,10 @@ export default function ConstellationView({
             title="Find related papers"
             onClick={() => {
               const id = stateRef.current.chatNodeId;
-              if (id !== null) expandNodeRef.current(id);
+              if (id !== null) {
+                hideChat();
+                void expandNodeRef.current(id);
+              }
             }}
           >
             <Plus size={13} aria-hidden="true" />
