@@ -288,6 +288,8 @@ export default function ConstellationView({
   const globalSearchStickToBottomRef = useRef(true);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daughterLabelWidthChRef = useRef<number | null>(null);
+  const daughterLabelFontPxRef = useRef<number | null>(null);
 
   const serializeGraph = useCallback((): SerializedGraph => {
     const s = stateRef.current;
@@ -398,9 +400,25 @@ export default function ConstellationView({
     [toScreen]
   );
 
+  const updateDaughterLabelWidthByZoom = useCallback(() => {
+    const container = nodesRef.current;
+    if (!container) return;
+
+    const zoom = Math.max(0.3, Math.min(3.0, stateRef.current.zoom));
+    const widthCh = Math.max(12, Math.min(28, Math.round(20 * Math.pow(zoom, 0.7))));
+    const fontPx = Math.max(8, Math.min(11, Number((9.5 * Math.pow(zoom, 0.35)).toFixed(2))));
+    if (daughterLabelWidthChRef.current === widthCh && daughterLabelFontPxRef.current === fontPx) return;
+
+    daughterLabelWidthChRef.current = widthCh;
+    daughterLabelFontPxRef.current = fontPx;
+    container.style.setProperty("--daughter-label-ch", String(widthCh));
+    container.style.setProperty("--daughter-label-font-px", String(fontPx));
+  }, []);
+
   const updateAllPositions = useCallback(() => {
+    updateDaughterLabelWidthByZoom();
     stateRef.current.nodes.forEach((n) => updateNodePosition(n));
-  }, [updateNodePosition]);
+  }, [updateDaughterLabelWidthByZoom, updateNodePosition]);
 
   const applyDaughterLabelVisibility = useCallback((visible: boolean) => {
     const s = stateRef.current;

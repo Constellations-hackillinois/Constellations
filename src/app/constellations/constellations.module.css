@@ -480,6 +480,11 @@
   transition: opacity 0.3s ease;
 }
 
+.starNode:not(.depth0) .starLabel {
+  width: min(calc(var(--daughter-label-ch, 20) * 1ch), 50vw);
+  font-size: calc(var(--daughter-label-font-px, 11) * 1px);
+}
+
 .starNode:hover .starLabel {
   opacity: 1;
 }
