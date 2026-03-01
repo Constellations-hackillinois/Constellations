@@ -1454,11 +1454,17 @@ export default function ConstellationView({
       const viewY = Math.min(topLeft.y, bottomRight.y);
       const viewW = Math.abs(bottomRight.x - topLeft.x);
       const viewH = Math.abs(bottomRight.y - topLeft.y);
-      ctx.fillStyle = "rgba(165, 165, 165, 0.28)";
-      ctx.fillRect(viewX, viewY, viewW, viewH);
-      ctx.strokeStyle = "rgba(220, 220, 220, 0.7)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(viewX + 0.5, viewY + 0.5, Math.max(viewW - 1, 0), Math.max(viewH - 1, 0));
+      if (viewW > 0 && viewH > 0) {
+        const radius = Math.min(5, viewW / 2, viewH / 2);
+        ctx.beginPath();
+        if (typeof ctx.roundRect === "function") {
+          ctx.roundRect(viewX, viewY, viewW, viewH, radius);
+        } else {
+          ctx.rect(viewX, viewY, viewW, viewH);
+        }
+        ctx.fillStyle = "rgba(165, 165, 165, 0.28)";
+        ctx.fill();
+      }
     }
 
     function handleMinimapClick(e: MouseEvent) {
