@@ -39,7 +39,6 @@ interface PdfChatMessage {
   loading?: boolean;
 }
 import { extractArxivId, toCanonicalArxivPdfUrl } from "@/lib/arxiv";
-import { createRoot, type Root } from "react-dom/client";
 import styles from "@/app/constellations/constellations.module.css";
 
 // ─── Types ───
@@ -289,8 +288,9 @@ export default function ConstellationView({
   const nodesRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const chatHeaderRef = useRef<HTMLDivElement>(null);
-  const chatMessagesRef = useRef<HTMLDivElement>(null);
-  const chatMessagesRootRef = useRef<Root | null>(null);
+  const chatPaperMetaRef = useRef<HTMLDivElement>(null);
+  const chatPaperLinkRef = useRef<HTMLAnchorElement>(null);
+  const chatPaperTitleRef = useRef<HTMLSpanElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const returnBtnRef = useRef<HTMLButtonElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -383,6 +383,7 @@ export default function ConstellationView({
     didDragNode: false,
     showDaughterLabels: true,
     traceNodeIds: new Set<number>(),
+    generationTraceNodeIds: new Set<number>(),
   });
 
   const cx = useCallback(() => window.innerWidth / 2, []);
@@ -464,68 +465,6 @@ export default function ConstellationView({
   }, []);
 
   // ─── Chat helpers ───
-  const renderMessages = useCallback((node: ConstellationNode) => {
-    const container = chatMessagesRef.current;
-    if (!container) return;
-    if (!chatMessagesRootRef.current) {
-      chatMessagesRootRef.current = createRoot(container);
-    }
-
-    chatMessagesRootRef.current.render(
-      <>
-        {node.messages.length === 0 ? (
-          <div className={`${styles.chatMsg} ${styles.ai}`}>
-            Greetings, traveler. Ask me about {node.label}.
-          </div>
-        ) : (
-          node.messages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={`${styles.chatMsg} ${message.role === "user" ? styles.user : styles.ai}`}
-            >
-              {message.icon ? (
-                <span className={styles.chatMsgContent}>
-                  <span className={styles.chatMsgIcon} aria-hidden="true">
-                    {message.icon === "bookOpen" ? <BookOpen size={13} /> : <Search size={13} />}
-                  </span>
-                  <span>{message.text}</span>
-                </span>
-              ) : (
-                message.text
-              )}
-            </div>
-          ))
-        )}
-        {node.paperUrl && (
-          <div className={styles.chatPaperMeta}>
-            <a
-              href={node.paperUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.chatPaperLink}
-            >
-              <FileText size={12} aria-hidden="true" />
-              <span>{node.paperTitle ?? "View Paper"}</span>
-            </a>
-          </div>
-        )}
-      </>
-    );
-
-    requestAnimationFrame(() => {
-      if (chatMessagesRef.current === container) {
-        container.scrollTop = container.scrollHeight;
-      }
-    });
-  }, []);
-
-  const hideChat = useCallback(() => {
-    chatRef.current?.classList.remove(styles.visible);
-    const s = stateRef.current;
-    s.chatNodeId = null;
-    s.chatPinned = false;
-  }, []);
-
   const clearPathTrace = useCallback(() => {
     const s = stateRef.current;
     s.traceNodeIds.forEach((nid) => {
@@ -535,6 +474,35 @@ export default function ConstellationView({
     s.traceNodeIds.clear();
     s.highlights.clear();
   }, []);
+
+  const clearGenerationTrace = useCallback(() => {
+    const s = stateRef.current;
+    s.generationTraceNodeIds.forEach((nid) => {
+      const n = s.nodes.get(nid);
+      n?.el?.classList.remove(styles.generationTraceNode);
+    });
+    s.generationTraceNodeIds.clear();
+  }, []);
+
+  const traceGenerationPathToRoot = useCallback((id: number) => {
+    const s = stateRef.current;
+    clearGenerationTrace();
+
+    let current: ConstellationNode | undefined = s.nodes.get(id);
+    while (current) {
+      s.generationTraceNodeIds.add(current.id);
+      current.el?.classList.add(styles.generationTraceNode);
+      current = current.parentId !== null ? s.nodes.get(current.parentId) : undefined;
+    }
+  }, [clearGenerationTrace]);
+
+  const hideChat = useCallback(() => {
+    chatRef.current?.classList.remove(styles.visible);
+    const s = stateRef.current;
+    s.chatNodeId = null;
+    s.chatPinned = false;
+    clearPathTrace();
+  }, [clearPathTrace]);
 
   const clearChatTimers = useCallback(() => {
     const s = stateRef.current;
@@ -619,9 +587,18 @@ export default function ConstellationView({
       const node = s.nodes.get(id);
       if (!node) return;
       s.chatNodeId = id;
-
       if (chatHeaderRef.current) chatHeaderRef.current.textContent = node.label;
-      renderMessages(node);
+      if (chatPaperMetaRef.current && chatPaperLinkRef.current && chatPaperTitleRef.current) {
+        if (node.paperUrl) {
+          chatPaperMetaRef.current.style.display = "";
+          chatPaperLinkRef.current.href = node.paperUrl;
+          chatPaperTitleRef.current.textContent = node.paperTitle ?? "View Paper";
+        } else {
+          chatPaperMetaRef.current.style.display = "none";
+          chatPaperLinkRef.current.removeAttribute("href");
+          chatPaperTitleRef.current.textContent = "";
+        }
+      }
 
       const chat = chatRef.current;
       if (chat) {
@@ -630,7 +607,7 @@ export default function ConstellationView({
       updateChatPosition();
       chatInputRef.current?.focus();
     },
-    [renderMessages, updateChatPosition]
+    [updateChatPosition]
   );
 
   const openNodeSurface = useCallback((nodeId: number) => {
@@ -676,30 +653,18 @@ export default function ConstellationView({
     if (!text || s.chatNodeId === null) return;
     const node = s.nodes.get(s.chatNodeId);
     if (!node) return;
+    if (node.el?.classList.contains(styles.followUpLoading)) return;
 
-    node.messages.push({ role: "user", text });
     if (input) input.value = "";
-    renderMessages(node);
 
     const parentNodeId = node.id;
-
-    node.messages.push({ role: "ai", text: "Searching for related papers...", icon: "search" });
-    renderMessages(node);
+    traceGenerationPathToRoot(parentNodeId);
+    node.el?.classList.add(styles.followUpLoading);
 
     try {
-      let pickedPaper: { title: string; url: string } | null;
-      let aiResponse: string;
-
       const parentUrl = node.paperUrl ?? "";
       const parentTitle = node.paperTitle ?? node.label;
-      const result = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
-      pickedPaper = result.pickedPaper;
-      aiResponse = result.aiResponse;
-
-      node.messages[node.messages.length - 1] = { role: "ai", text: aiResponse };
-      if (s.chatNodeId === parentNodeId) {
-        renderMessages(node);
-      }
+      const { pickedPaper } = await followUpSearch(parentUrl, parentTitle, text, currentIdRef.current);
 
       if (pickedPaper) {
         const isOrigin = node.depth === 0;
@@ -749,16 +714,12 @@ export default function ConstellationView({
       flushGraph();
     } catch (err) {
       console.error("[constellation] followUpSearch failed:", err);
-      node.messages[node.messages.length - 1] = {
-        role: "ai",
-        text: "Something went wrong while searching. Please try again.",
-      };
-      if (s.chatNodeId === parentNodeId) {
-        renderMessages(node);
-      }
       flushGraph();
+    } finally {
+      node.el?.classList.remove(styles.followUpLoading);
+      clearGenerationTrace();
     }
-  }, [renderMessages, flushGraph]);
+  }, [clearGenerationTrace, flushGraph, traceGenerationPathToRoot]);
 
   // ─── Node interactions ───
   const highlightSubtree = useCallback((id: number) => {
@@ -1105,7 +1066,7 @@ export default function ConstellationView({
 
   createNodeRef.current = createNode;
 
-  const expandNodeRef = useRef<(id: number) => void>(() => { });
+  const expandNodeRef = useRef<(id: number) => Promise<void>>(async () => { });
 
   const expandNode = useCallback(
     async (id: number) => {
@@ -1116,7 +1077,6 @@ export default function ConstellationView({
         return;
       }
       if (parent.isFrontier) {
-        showChat(id);
         return;
       }
 
@@ -1124,30 +1084,28 @@ export default function ConstellationView({
       const pTitle = parent.paperTitle ?? parent.label;
       const pUrl = parent.paperUrl ?? "";
 
-      if (parent.el) parent.el.style.opacity = "0.6";
+      traceGenerationPathToRoot(id);
+      if (parent.el) {
+        parent.el.classList.add(styles.followUpLoading);
+      }
 
       try {
         const { papers, frontier } = await expandSearch(pUrl, pTitle, currentIdRef.current);
 
-        if (parent.el) parent.el.style.opacity = "1";
-
         if (frontier?.isFrontier) {
           parent.isFrontier = true;
           parent.frontierReason = frontier.reason;
-          parent.expanding = false;
           if (parent.el) {
             parent.el.classList.add(styles.frontierNode);
             parent.el.classList.add(styles.frontierRevealing);
             setTimeout(() => parent.el?.classList.remove(styles.frontierRevealing), 1200);
           }
           parent.messages.push({ role: "ai", text: `This paper is at the research frontier. ${frontier.reason}`, icon: "search" });
-          showChat(id);
           flushGraph();
           return;
         }
 
         if (papers.length === 0) {
-          parent.expanding = false;
           return;
         }
 
@@ -1228,10 +1186,15 @@ export default function ConstellationView({
         flushGraph();
       } catch (err) {
         console.error("[constellation] expandSearch failed:", err);
-        if (parent.el) parent.el.style.opacity = "1";
+      } finally {
+        parent.expanding = false;
+        if (parent.el) {
+          parent.el.classList.remove(styles.followUpLoading);
+        }
+        clearGenerationTrace();
       }
     },
-    [highlightSubtree, flushGraph]
+    [clearGenerationTrace, flushGraph, highlightSubtree, traceGenerationPathToRoot]
   );
 
   expandNodeRef.current = expandNode;
@@ -1308,6 +1271,7 @@ export default function ConstellationView({
         for (const nid of toDelete) {
           s.highlights.delete(nid);
           s.traceNodeIds.delete(nid);
+          s.generationTraceNodeIds.delete(nid);
         }
 
         // Persist to Supabase
@@ -1483,10 +1447,6 @@ export default function ConstellationView({
 
     function handleMouseDown(e: MouseEvent) {
       const targetEl = e.target as HTMLElement;
-      if (!targetEl.closest(`.${styles.starNode}`)) {
-        clearPathTrace();
-      }
-
       if (
         targetEl.closest(`.${styles.starNode}`) ||
         targetEl.closest(`.${styles.chatWindow}`) ||
@@ -1705,7 +1665,9 @@ export default function ConstellationView({
 
         const hl =
           (s.highlights.has(node.id) && s.highlights.has(node.parentId)) ||
-          (s.traceNodeIds.has(node.id) && s.traceNodeIds.has(node.parentId));
+          (s.traceNodeIds.has(node.id) && s.traceNodeIds.has(node.parentId)) ||
+          (s.generationTraceNodeIds.has(node.id) &&
+            s.generationTraceNodeIds.has(node.parentId));
         let edgeAlpha = 0.42;
         if (hl) {
           edgeAlpha = 0.92;
@@ -1871,8 +1833,6 @@ export default function ConstellationView({
       chat.removeEventListener("mouseenter", chatEnter);
       chat.removeEventListener("mouseleave", chatLeave);
       minimapCanvas?.removeEventListener("click", handleMinimapClick);
-      chatMessagesRootRef.current?.unmount();
-      chatMessagesRootRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2135,7 +2095,10 @@ export default function ConstellationView({
             title="Find related papers"
             onClick={() => {
               const id = stateRef.current.chatNodeId;
-              if (id !== null) expandNodeRef.current(id);
+              if (id !== null) {
+                hideChat();
+                void expandNodeRef.current(id);
+              }
             }}
           >
             <Plus size={13} aria-hidden="true" />
@@ -2156,7 +2119,17 @@ export default function ConstellationView({
             Delete
           </button>
         </div>
-        <div ref={chatMessagesRef} className={styles.chatMessages} />
+        <div ref={chatPaperMetaRef} className={styles.chatPaperMeta}>
+          <a
+            ref={chatPaperLinkRef}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.chatPaperLink}
+          >
+            <FileText size={12} aria-hidden="true" />
+            <span ref={chatPaperTitleRef}>View Paper</span>
+          </a>
+        </div>
         <div className={styles.chatInputArea}>
           <input
             ref={chatInputRef}
@@ -2167,7 +2140,10 @@ export default function ConstellationView({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                sendMessage();
+                const text = chatInputRef.current?.value.trim();
+                if (!text) return;
+                void sendMessage();
+                hideChat();
               }
             }}
           />
@@ -2375,7 +2351,7 @@ export default function ConstellationView({
       )}
 
       <div className={styles.onboardingHint}>
-        Click a node to view paper &middot; Hover for details &middot; Drag to pan &middot; Scroll to zoom
+        Click a node to view paper &middot; Hover to ask follow-ups &middot; Drag to pan &middot; Scroll to zoom
       </div>
     </>
   );
